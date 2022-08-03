@@ -1,0 +1,2097 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 13.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[     95489,       2089]
+NotebookOptionsPosition[     87272,       1964]
+NotebookOutlinePosition[     87783,       1984]
+CellTagsIndexPosition[     87740,       1981]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Diagnosing higher order singularities (HOS)", "Title",
+ CellChangeTimes->{{3.868104674248571*^9, 
+  3.868104696705721*^9}},ExpressionUUID->"fa6d5a84-a6cd-4acd-b29b-\
+2d245fe11bb1"],
+
+Cell["Anirudh Chandrasekaran", "Author",
+ CellChangeTimes->{{3.866809441041482*^9, 
+  3.866809450807414*^9}},ExpressionUUID->"d9c72d73-d40a-4bf3-aca4-\
+c259b1f484e3"],
+
+Cell["Loughborough University, United Kingdom", "Affiliation",
+ CellChangeTimes->{{3.8668094622485*^9, 3.866809494716444*^9}, {
+  3.867824021687441*^9, 
+  3.867824026726722*^9}},ExpressionUUID->"6e7fc7e6-5a1b-44b0-9955-\
+f40454346063"],
+
+Cell["Last Updated: 29 July 2022.", "Affiliation",
+ CellChangeTimes->{{3.866809496246429*^9, 3.866809513166008*^9}, {
+  3.867820216467067*^9, 3.8678202208345957`*^9}, {3.868104757583612*^9, 
+  3.868104757933139*^9}},ExpressionUUID->"1557f184-4268-481d-a779-\
+e67ea21e4643"],
+
+Cell["\<\
+In this notebook, we implement an algorithm for calculating the corank, \
+codimension and determinacy of a multivariate polynomial. There is no \
+restriction on the degree of the polynomial, number of variables or even the \
+choice of symbols for the variables. The function is written to automatically \
+detect the variables in the polynomial and the degree, so that it can be \
+directly fed any polynomial by the user, without the requirement of any \
+pre-processing. In particular, we can feed it Taylor expansion of functions \
+about arbitrary points, to try and diagnose a singularity (if one is present).\
+\>", "Text",
+ CellChangeTimes->{{3.868104761086027*^9, 3.868104943875634*^9}, {
+  3.8681049752558937`*^9, 3.868105025954475*^9}, {3.8685073370632668`*^9, 
+  3.868507376707919*^9}},ExpressionUUID->"a9c91893-2b19-4676-ba53-\
+d302a7d6290f"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"DiagnoseHOS", "[", 
+   RowBox[{"Poly_", ",", 
+    RowBox[{"MaxDeg_", ":", 
+     RowBox[{"-", "1"}]}], ",", 
+    RowBox[{"Resln_", ":", 
+     SuperscriptBox["10", 
+      RowBox[{"-", "6"}]]}]}], "]"}], ":=", 
+  RowBox[{"Module", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{
+     "PolyDeg", ",", "SpaceDim", ",", "KVec", ",", "Corank", ",", "HessMat", 
+      ",", "HessEigs", ",", "JacobMat", ",", "PolyDerivs", ",", "Monoms", ",",
+       "AllMonoms", ",", "Partns", ",", "PostvDistPartns", ",", 
+      "PartnsWithZeros", ",", "BasisPolys", ",", "CoeffMatrix", ",", 
+      "ZeroList", ",", "OneList", ",", "BMat", ",", "SolMat", ",", "Solved", 
+      ",", "Determinacy", ",", "Codimension"}], "}"}], ",", 
+    "\[IndentingNewLine]", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"KVec", "=", 
+      RowBox[{"Variables", "[", "Poly", "]"}]}], ";", " ", 
+     RowBox[{"(*", 
+      RowBox[{
+      "We", " ", "detect", " ", "the", " ", "symbolic", " ", "variables", " ",
+        "used", " ", "in", " ", "the", " ", 
+       RowBox[{"polynomial", "."}]}], "*)"}], "\[IndentingNewLine]", 
+     RowBox[{"(*", 
+      RowBox[{
+       RowBox[{"Print", "[", "KVec", "]"}], ";"}], "*)"}], 
+     "\[IndentingNewLine]", "\[IndentingNewLine]", 
+     RowBox[{"SpaceDim", "=", 
+      RowBox[{"Length", "[", "KVec", "]"}]}], ";", "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", 
+     RowBox[{"(*", 
+      RowBox[{
+       RowBox[{"To", " ", "compute", " ", "the", " ", "corank"}], ",", " ", 
+       RowBox[{
+       "we", " ", "need", " ", "to", " ", "compute", " ", "the", " ", 
+        "Hessian", " ", "matrix", " ", 
+        RowBox[{"first", ":"}]}]}], "*)"}], "\[IndentingNewLine]", 
+     RowBox[{"HessMat", "=", 
+      RowBox[{"First", "@", 
+       RowBox[{"Last", "@", 
+        RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+         RowBox[{"Do", "[", "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{"Sow", "[", "\[IndentingNewLine]", 
+            RowBox[{"First", "@", 
+             RowBox[{"Last", "@", 
+              RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+               RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"Sow", "[", 
+                   RowBox[{"ReplaceAll", "[", 
+                    RowBox[{
+                    RowBox[{"D", "[", 
+                    RowBox[{"Poly", ",", "K1", ",", "K2"}], "]"}], ",", 
+                    RowBox[{"Table", "[", 
+                    RowBox[{
+                    RowBox[{"Ki", "->", "0"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"Ki", ",", "KVec"}], "}"}]}], "]"}]}], "]"}], 
+                   "]"}], ";"}], "\[IndentingNewLine]", ",", 
+                 RowBox[{"{", 
+                  RowBox[{"K2", ",", "KVec"}], "}"}]}], "]"}], 
+               "\[IndentingNewLine]", "]"}]}]}], "\[IndentingNewLine]", "]"}],
+            "\[IndentingNewLine]", ",", 
+           RowBox[{"{", 
+            RowBox[{"K1", ",", "KVec"}], "}"}]}], "]"}], 
+         "\[IndentingNewLine]", "]"}]}]}]}], ";", "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", 
+     RowBox[{"HessEigs", "=", 
+      RowBox[{
+       RowBox[{"Chop", "[", 
+        RowBox[{
+         RowBox[{"Eigenvalues", "[", "HessMat", "]"}], ",", "Resln"}], "]"}], 
+       "//", "Rationalize"}]}], ";", "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", 
+     RowBox[{"(*", 
+      RowBox[{
+      "The", " ", "corank", " ", "is", " ", "the", " ", "number", " ", "of", 
+       " ", "zero", " ", "eigenvalues", " ", "of", " ", "the", " ", 
+       RowBox[{"Hessian", ":"}]}], "*)"}], "\[IndentingNewLine]", 
+     RowBox[{"Corank", "=", 
+      RowBox[{"Count", "[", 
+       RowBox[{"HessEigs", ",", "0"}], "]"}]}], ";", "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", 
+     RowBox[{"(*", 
+      RowBox[{
+      "The", " ", "Jacobian", " ", "is", " ", "necessary", " ", "to", " ", 
+       "determine", " ", "if", " ", "we", " ", "have", " ", "a", " ", 
+       "critical", " ", "point", " ", "in", " ", "the", " ", "first", " ", 
+       RowBox[{"place", ":"}]}], "*)"}], "\[IndentingNewLine]", 
+     RowBox[{"JacobMat", "=", 
+      RowBox[{
+       RowBox[{"Chop", "[", 
+        RowBox[{
+         RowBox[{"First", "@", 
+          RowBox[{"Last", "@", 
+           RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+            RowBox[{"Do", "[", "\[IndentingNewLine]", 
+             RowBox[{
+              RowBox[{"Sow", "[", 
+               RowBox[{"ReplaceAll", "[", 
+                RowBox[{
+                 RowBox[{"D", "[", 
+                  RowBox[{"Poly", ",", "K1"}], "]"}], ",", 
+                 RowBox[{"Table", "[", 
+                  RowBox[{
+                   RowBox[{"Ki", "->", "0"}], ",", 
+                   RowBox[{"{", 
+                    RowBox[{"Ki", ",", "KVec"}], "}"}]}], "]"}]}], "]"}], 
+               "]"}], "\[IndentingNewLine]", ",", 
+              RowBox[{"{", 
+               RowBox[{"K1", ",", "KVec"}], "}"}]}], "]"}], 
+            "\[IndentingNewLine]", "]"}]}]}], ",", "Resln"}], "]"}], "//", 
+       "Rationalize"}]}], ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+     RowBox[{"(*", 
+      RowBox[{
+       RowBox[{"Print", "[", "JacobMat", "]"}], ";"}], "*)"}], 
+     "\[IndentingNewLine]", 
+     RowBox[{"Solved", "=", "False"}], ";", "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", 
+     RowBox[{"If", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"Count", "[", 
+         RowBox[{"JacobMat", ",", "0"}], "]"}], "==", "SpaceDim"}], ",", 
+       RowBox[{"(*", 
+        RowBox[{
+         RowBox[{
+         "If", " ", "all", " ", "the", " ", "elements", " ", "of", " ", "the",
+           " ", "Jacobian", " ", "are", " ", "zero"}], ",", " ", 
+         RowBox[{"we", " ", "have", " ", "a", " ", "critical", " ", 
+          RowBox[{"point", "."}]}]}], "*)"}], "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"If", "[", 
+         RowBox[{
+          RowBox[{"Corank", ">", "0"}], ",", 
+          RowBox[{"(*", 
+           RowBox[{
+            RowBox[{
+            "If", " ", "at", " ", "least", " ", "one", " ", "or", " ", "more",
+              " ", "eigenvalues", " ", "of", " ", "the", " ", "Hessian", " ", 
+             "are", " ", "zero"}], ",", " ", 
+            RowBox[{
+             RowBox[{"indicated", " ", "by", " ", "a", " ", "non"}], "-", 
+             RowBox[{"zero", " ", "corank"}]}], ",", " ", 
+            RowBox[{
+            "then", " ", "we", " ", "have", " ", "a", " ", "higher", " ", 
+             "order", " ", "critical", " ", 
+             RowBox[{"point", "."}]}]}], "*)"}], "\[IndentingNewLine]", 
+          "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{"If", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"IntegerQ", "[", "MaxDeg", "]"}], "&&", 
+              RowBox[{"MaxDeg", ">", "0"}]}], ",", 
+             RowBox[{"(*", 
+              RowBox[{
+              "Sanity", " ", "check", " ", "to", " ", "ensure", " ", "that", 
+               " ", "we", " ", "have", " ", "a", " ", "legitimate", " ", 
+               RowBox[{"polunomial", "."}]}], "*)"}], "\[IndentingNewLine]", 
+             RowBox[{
+              RowBox[{"PolyDeg", "=", "MaxDeg"}], ";"}], 
+             "\[IndentingNewLine]", ",", "\[IndentingNewLine]", 
+             RowBox[{"PolyDeg", "=", 
+              RowBox[{
+               RowBox[{
+                RowBox[{
+                "ResourceFunction", "[", "\"\<PolynomialDegree\>\"", "]"}], 
+                "[", 
+                RowBox[{"Poly", ",", "KVec"}], "]"}], "+", "1"}]}]}], " ", 
+            "\[IndentingNewLine]", 
+            RowBox[{"(*", 
+             RowBox[{
+              RowBox[{
+               RowBox[{
+               "We", " ", "add", " ", "one", " ", "to", " ", "the", " ", 
+                "actual", " ", "degree", " ", "of", " ", "the", " ", 
+                "polynomial", " ", "since", " ", "the", " ", "algorithm", " ",
+                 "can", " ", "narrow", " ", "down", " ", "the", " ", 
+                "determinacy", " ", "to", " ", "either", " ", "the", " ", 
+                "actual", " ", "det", " ", "or", " ", "det"}], "+", "1"}], 
+              ",", " ", 
+              RowBox[{
+              "so", " ", "that", " ", "the", " ", "check", " ", "for", " ", 
+               "determinacy", " ", "has", " ", "to", " ", "be", " ", 
+               "performed", " ", "up", " ", "to", " ", "at", " ", "least", 
+               " ", "up", " ", "one", " ", "degree", " ", "higher", " ", 
+               "than", " ", "the", " ", "suspected", " ", "determinacy", " ", 
+               "of", " ", "the", " ", 
+               RowBox[{"polynomial", "."}]}]}], "*)"}], "\[IndentingNewLine]",
+             "]"}], ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+           RowBox[{"(*", 
+            RowBox[{
+             RowBox[{
+             "Given", " ", "polynomial", " ", "p", " ", "and", " ", 
+              "variables", " ", 
+              SubscriptBox["x", "1"]}], ",", 
+             SubscriptBox["x", "2"], ",", "...", ",", 
+             SubscriptBox["x", "n"], ",", " ", 
+             RowBox[{
+             "we", " ", "need", " ", "to", " ", "compute", " ", "the", " ", 
+              "first", " ", "derivatives", " ", "of", " ", "the", " ", 
+              "polynomial", " ", "with", " ", "respect", " ", "to", " ", 
+              "the", " ", 
+              RowBox[{"variables", ":"}]}]}], "*)"}], "\[IndentingNewLine]", 
+           RowBox[{"PolyDerivs", "=", 
+            RowBox[{"First", "@", 
+             RowBox[{"Last", "@", 
+              RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+               RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                RowBox[{
+                 RowBox[{"Sow", "[", 
+                  RowBox[{"D", "[", 
+                   RowBox[{"Poly", ",", "Ki"}], "]"}], "]"}], 
+                 "\[IndentingNewLine]", ",", 
+                 RowBox[{"{", 
+                  RowBox[{"Ki", ",", "KVec"}], "}"}]}], "]"}], 
+               "\[IndentingNewLine]", "]"}]}]}]}], ";", "\[IndentingNewLine]",
+            "\[IndentingNewLine]", 
+           RowBox[{"(*", 
+            RowBox[{
+             RowBox[{
+             "As", " ", "we", " ", "attempt", " ", "to", " ", "check", " ", 
+              "for", " ", "determinacy", " ", "at", " ", "increasing", " ", 
+              "orders"}], ",", " ", 
+             RowBox[{"at", " ", "each", " ", "order", " ", "k"}], ",", " ", 
+             RowBox[{
+             "we", " ", "first", " ", "accumulate", " ", "all", " ", "the", 
+              " ", "monomials", " ", "of", " ", "degree", " ", "k", " ", 
+              "into", " ", "the", " ", "list", " ", 
+              RowBox[{"AllMonoms", ".", " ", "We"}], " ", "then", " ", 
+              "accumulate", " ", "the", " ", "basis", " ", "polynomials", " ",
+               "obtained", " ", "by", " ", "multiplying", " ", "these", " ", 
+              "monomials", " ", "by", " ", "the", " ", "derivative", " ", 
+              "polynomials", " ", "in", " ", "PolyDerivs"}], ",", " ", 
+             RowBox[{"into", " ", 
+              RowBox[{"BasisPolys", "."}]}]}], "*)"}], "\[IndentingNewLine]", 
+           
+           RowBox[{"AllMonoms", "=", 
+            RowBox[{"{", "}"}]}], ";", "\[IndentingNewLine]", 
+           RowBox[{"BasisPolys", "=", 
+            RowBox[{"{", "}"}]}], ";", "\[IndentingNewLine]", 
+           RowBox[{"ZeroList", "=", 
+            RowBox[{"{", "}"}]}], ";", "\[IndentingNewLine]", 
+           "\[IndentingNewLine]", 
+           RowBox[{"On", "[", 
+            RowBox[{"LinearSolve", "::", "nosol"}], "]"}], ";", 
+           RowBox[{"(*", 
+            RowBox[{
+            "Turning", " ", "on", " ", "the", " ", "notification", " ", "in", 
+             " ", "case", " ", "it", " ", "has", " ", "been", " ", "turned", 
+             " ", "off", " ", "by", " ", "the", " ", 
+             RowBox[{"user", "."}]}], "*)"}], "\[IndentingNewLine]", 
+           "\[IndentingNewLine]", 
+           RowBox[{"Do", "[", 
+            RowBox[{"(*", 
+             RowBox[{
+             "A", " ", "loop", " ", "to", " ", "check", " ", "for", " ", 
+              "determinacy", " ", "order", " ", "by", " ", "order", " ", "up",
+               " ", "to", " ", "one", " ", "degree", " ", "higher", " ", 
+              "than", " ", "the", " ", "actual", " ", "degree", " ", "of", 
+              " ", "the", " ", "polynomial", " ", 
+              RowBox[{
+               RowBox[{"(", 
+                RowBox[{
+                "or", " ", "up", " ", "to", " ", "a", " ", "level", " ", 
+                 "specified", " ", "by", " ", "the", " ", "user"}], ")"}], 
+               "."}]}], "*)"}], "\[IndentingNewLine]", "\[IndentingNewLine]", 
+            
+            RowBox[{"(*", 
+             RowBox[{
+              RowBox[{
+               RowBox[{
+               "Our", " ", "strategy", " ", "for", " ", "constructing", " ", 
+                "all", " ", "the", " ", "monomials", " ", "of", " ", "degree",
+                 " ", "k", " ", "in", " ", "n", " ", "variables", " ", "is", 
+                " ", "to", " ", "first", " ", "compute", " ", "the", " ", 
+                "distinct", " ", "partitions", " ", "of", " ", "k", " ", 
+                "into", " ", "n", " ", "positve", " ", 
+                RowBox[{"integers", ".", " ", "Mathematica"}], " ", "returns",
+                 " ", "this", " ", "as", " ", "a", " ", "collection", " ", 
+                "of", " ", "sets", " ", "of", " ", "length", " ", 
+                RowBox[{"n", ".", " ", "We"}], " ", "then", " ", "repeat", 
+                " ", "the", " ", "procedure", " ", "for", " ", "partitions", 
+                " ", "of", " ", "k", " ", "into", " ", "n"}], "-", 
+               RowBox[{"1", " ", "positive", " ", "integers"}]}], ",", " ", 
+              RowBox[{
+               RowBox[{"then", " ", "n"}], "-", 
+               RowBox[{
+               "2", " ", "positive", " ", "integers", " ", "and", " ", "so", 
+                " ", "on", " ", "until", " ", "partition", " ", "of", " ", 
+                "k", " ", "into", " ", "one", " ", "positive", " ", 
+                RowBox[{"integer", ".", " ", "For"}], " ", "those", " ", 
+                "partitions", " ", "of", " ", "k", " ", "into", " ", "less", 
+                " ", "than", " ", "n", " ", "integers", " ", 
+                RowBox[{"(", 
+                 RowBox[{
+                 "where", " ", "Mathematica", " ", "returns", " ", "sets", 
+                  " ", "of", " ", "length", " ", "less", " ", "than", " ", 
+                  "n"}], ")"}]}]}], ",", " ", 
+              RowBox[{
+              "we", " ", "append", " ", "zeros", " ", "into", " ", "the", " ",
+                "set", " ", "to", " ", "make", " ", "up", " ", "n", " ", 
+               "integers", " ", "in", " ", 
+               RowBox[{"total", ".", " ", "After"}], " ", "this"}], ",", " ", 
+              
+              RowBox[{
+              "we", " ", "generate", " ", "all", " ", "the", " ", 
+               "permutations", " ", "of", " ", "this", " ", "set"}], ",", " ", 
+              RowBox[{
+               RowBox[{
+               "which", " ", "then", " ", "gives", " ", "us", " ", "all", " ",
+                 "possible", " ", "ways", " ", "of", " ", "writing", " ", 
+                "k"}], " ", "=", " ", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{
+                  RowBox[{
+                   SubscriptBox["i", "1"], " ", "+", " ", 
+                   SubscriptBox["i", "2"], " ", "+"}], " ", "..."}], " ", "+",
+                  " ", 
+                 RowBox[{
+                  SubscriptBox["i", "n"], " ", "for", " ", "integer", " ", 
+                  SubscriptBox["i", "j"]}]}], " ", ">=", " ", 
+                RowBox[{
+                "0.", " ", "This", " ", "then", " ", "allows", " ", "us", " ",
+                  "to", " ", "compute", " ", "all", " ", "the", " ", 
+                 "monomials", " ", "of", " ", "degree", " ", "k", " ", "in", 
+                 " ", "n", " ", 
+                 RowBox[{"variables", "."}]}]}]}]}], "*)"}], 
+            "\[IndentingNewLine]", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"PostvDistPartns", "=", 
+               RowBox[{"IntegerPartitions", "[", 
+                RowBox[{"CurrDeg", ",", 
+                 RowBox[{"{", "SpaceDim", "}"}]}], "]"}]}], ";", " ", 
+              RowBox[{"(*", 
+               RowBox[{
+               "Partitions", " ", "of", " ", "k", " ", "into", " ", "n", " ", 
+                "positive", " ", 
+                RowBox[{"integers", "."}]}], "*)"}], "\[IndentingNewLine]", 
+              "\[IndentingNewLine]", 
+              RowBox[{"PartnsWithZeros", "=", 
+               RowBox[{"{", "}"}]}], ";", " ", 
+              RowBox[{"(*", 
+               RowBox[{
+               "Partitions", " ", "of", " ", "k", " ", "into", " ", "less", 
+                " ", "than", " ", "n", " ", "positive", " ", 
+                RowBox[{"integers", ".", " ", "Rest"}], " ", "of", " ", 
+                "elements", " ", "are", " ", "taken", " ", "to", " ", "be", 
+                " ", 
+                RowBox[{"zeros", "."}]}], "*)"}], "\[IndentingNewLine]", 
+              "\[IndentingNewLine]", 
+              RowBox[{"Do", "[", "\[IndentingNewLine]", 
+               RowBox[{
+                RowBox[{"PartnsWithZeros", "=", 
+                 RowBox[{"Join", "[", 
+                  RowBox[{"PartnsWithZeros", ",", 
+                   RowBox[{
+                    RowBox[{
+                    RowBox[{"(", 
+                    RowBox[{"Join", "[", 
+                    RowBox[{
+                    RowBox[{"ConstantArray", "[", 
+                    RowBox[{"0", ",", "i"}], "]"}], ",", "#"}], "]"}], ")"}], 
+                    "&"}], "/@", 
+                    RowBox[{"IntegerPartitions", "[", 
+                    RowBox[{"CurrDeg", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"SpaceDim", "-", "i"}], "}"}]}], "]"}]}]}], 
+                  "]"}]}], "\[IndentingNewLine]", ",", 
+                RowBox[{"{", 
+                 RowBox[{"i", ",", "1", ",", 
+                  RowBox[{"SpaceDim", "-", "1"}]}], "}"}]}], "]"}], ";", 
+              "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"Partns", "=", 
+               RowBox[{"Flatten", "[", 
+                RowBox[{
+                 RowBox[{"Permutations", "/@", 
+                  RowBox[{"Join", "[", 
+                   RowBox[{"PostvDistPartns", ",", "PartnsWithZeros"}], 
+                   "]"}]}], ",", "1"}], "]"}]}], ";", "\[IndentingNewLine]", 
+              "\[IndentingNewLine]", 
+              RowBox[{"Monoms", "=", 
+               RowBox[{"First", "@", 
+                RowBox[{"Last", "@", 
+                 RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                  RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                   RowBox[{
+                    RowBox[{"Sow", "[", 
+                    RowBox[{"Product", "[", 
+                    RowBox[{
+                    SuperscriptBox[
+                    RowBox[{"KVec", "[", 
+                    RowBox[{"[", "i", "]"}], "]"}], 
+                    RowBox[{"CurrPartn", "[", 
+                    RowBox[{"[", "i", "]"}], "]"}]], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"i", ",", "1", ",", "SpaceDim"}], "}"}]}], "]"}], 
+                    "]"}], "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"CurrPartn", ",", "Partns"}], "}"}]}], "]"}], 
+                  "\[IndentingNewLine]", "]"}]}]}]}], ";", 
+              "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"AllMonoms", "=", 
+               RowBox[{"Join", "[", 
+                RowBox[{"AllMonoms", ",", "Monoms"}], "]"}]}], ";", " ", 
+              RowBox[{"(*", 
+               RowBox[{
+               "Appending", " ", "the", " ", "newly", " ", "computed", " ", 
+                "monomials", " ", "into", " ", "the", " ", "list", " ", 
+                RowBox[{"AllMonoms", "."}]}], "*)"}], "\[IndentingNewLine]", 
+              "\[IndentingNewLine]", 
+              RowBox[{"(*", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{
+                 "We", " ", "will", " ", "be", " ", "solving", " ", "the", 
+                  " ", "linear", " ", "system", " ", 
+                  RowBox[{"C", ".", "B"}]}], " ", "=", " ", "S"}], ",", " ", 
+                RowBox[{
+                "where", " ", "C", " ", "is", " ", "the", " ", "coefficient", 
+                 " ", "matrix", " ", "of", " ", "the", " ", "base", " ", 
+                 "polynomials", " ", "in", " ", "the", " ", "basis", " ", 
+                 "of", " ", "monomials", 
+                 RowBox[{"(", 
+                  RowBox[{
+                   RowBox[{
+                   "the", " ", "base", " ", "polynomials", " ", "are", " ", 
+                    "ontaining", " ", "by", " ", "multiplying", " ", "the", 
+                    " ", "first", " ", "derivatives", " ", "of", " ", "the", 
+                    " ", "original", " ", "polynomial", " ", "by", " ", "all",
+                     " ", "the", " ", 
+                    RowBox[{"monomials", ".", " ", "S"}], " ", "is", " ", "a",
+                     " ", "set", " ", "containing", " ", 
+                    RowBox[{"1", "'"}], "s", " ", "at", " ", "the", " ", 
+                    "position", " ", "of", " ", "the", " ", "monomials", " ", 
+                    "of", " ", "degree", " ", "k"}], ",", " ", 
+                   RowBox[{"and", " ", "zero", " ", "elsewhere", " ", 
+                    RowBox[{"(", 
+                    RowBox[{
+                    "since", " ", "the", " ", "aim", " ", "is", " ", "to", 
+                    " ", "check", " ", "whether", " ", "a", " ", "linear", 
+                    " ", "combination", " ", "of", " ", "the", " ", "base", 
+                    " ", "polynomials", " ", "can", " ", "yield", " ", "all", 
+                    " ", "the", " ", "monomials", " ", "of", " ", "degree", 
+                    " ", "k"}], ")"}]}]}], ")"}]}]}], "*)"}], 
+              "\[IndentingNewLine]", 
+              RowBox[{"OneList", "=", 
+               RowBox[{"ConstantArray", "[", 
+                RowBox[{"1", ",", 
+                 RowBox[{"Length", "[", "Monoms", "]"}]}], "]"}]}], ";", 
+              "\[IndentingNewLine]", 
+              RowBox[{"BMat", "=", 
+               RowBox[{"Join", "[", 
+                RowBox[{"ZeroList", ",", "OneList"}], "]"}]}], ";", 
+              "\[IndentingNewLine]", 
+              RowBox[{"ZeroList", "=", 
+               RowBox[{"Join", "[", 
+                RowBox[{"ZeroList", ",", 
+                 RowBox[{"ConstantArray", "[", 
+                  RowBox[{"0", ",", 
+                   RowBox[{"Length", "[", "Monoms", "]"}]}], "]"}]}], "]"}]}],
+               ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"BasisPolys", "=", 
+               RowBox[{"Join", "[", 
+                RowBox[{"BasisPolys", ",", "\[IndentingNewLine]", 
+                 RowBox[{"First", "@", 
+                  RowBox[{"Last", "@", 
+                   RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                    RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                    RowBox[{
+                    RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                    RowBox[{
+                    RowBox[{"Sow", "[", 
+                    RowBox[{
+                    RowBox[{"polyderiv", " ", "monom"}], "//", "Expand"}], 
+                    "]"}], "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"polyderiv", ",", "PolyDerivs"}], "}"}]}], "]"}], 
+                    "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"monom", ",", "Monoms"}], "}"}]}], "]"}], 
+                    "\[IndentingNewLine]", "]"}]}]}]}], "\[IndentingNewLine]",
+                 "]"}]}], ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"CoeffMatrix", "=", 
+               RowBox[{"First", "@", 
+                RowBox[{"Last", "@", 
+                 RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                  RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                   RowBox[{
+                    RowBox[{
+                    RowBox[{"CoeffRow", "=", 
+                    RowBox[{"First", "@", 
+                    RowBox[{"Last", "@", 
+                    RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                    RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"Sow", "[", 
+                    RowBox[{"ReplaceAll", "[", 
+                    RowBox[{
+                    RowBox[{"Coefficient", "[", 
+                    RowBox[{"poly", ",", "monom"}], "]"}], ",", 
+                    RowBox[{"Table", "[", 
+                    RowBox[{
+                    RowBox[{"Ki", "->", "0"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"Ki", ",", "KVec"}], "}"}]}], "]"}]}], "]"}], 
+                    "]"}], ";"}], "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"monom", ",", "AllMonoms"}], "}"}]}], "]"}], 
+                    "\[IndentingNewLine]", "]"}]}]}]}], ";", 
+                    "\[IndentingNewLine]", "\[IndentingNewLine]", 
+                    RowBox[{"Sow", "[", "CoeffRow", "]"}]}], 
+                    "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"poly", ",", "BasisPolys"}], "}"}]}], "]"}], 
+                  "\[IndentingNewLine]", "]"}]}]}]}], ";", 
+              "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"SolMat", "=", 
+               RowBox[{"Check", "[", 
+                RowBox[{
+                 RowBox[{"LinearSolve", "[", 
+                  RowBox[{
+                   RowBox[{"Transpose", "[", "CoeffMatrix", "]"}], ",", 
+                   "BMat"}], "]"}], ",", "1"}], "]"}]}], ";", " ", 
+              RowBox[{"(*", 
+               RowBox[{
+                RowBox[{"Solving", " ", "the", " ", "linear", " ", 
+                 RowBox[{"system", ".", " ", "If"}], " ", "it", " ", "has", 
+                 " ", "a", " ", "solution", " ", "then", " ", "the", " ", 
+                 "polynomial", " ", "is", " ", "k"}], "-", 
+                RowBox[{"determinate", "."}]}], "*)"}], "\[IndentingNewLine]",
+               "\[IndentingNewLine]", "\[IndentingNewLine]", 
+              RowBox[{"If", "[", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"NumberQ", "[", "SolMat", "]"}], "&&", 
+                 RowBox[{"SolMat", "==", "1"}]}], ",", ",", 
+                "\[IndentingNewLine]", 
+                RowBox[{
+                 RowBox[{"Solved", "=", "True"}], ";", "\[IndentingNewLine]", 
+                 
+                 RowBox[{"Determinacy", "=", "CurrDeg"}], ";", 
+                 "\[IndentingNewLine]", "\[IndentingNewLine]", 
+                 RowBox[{"CoeffMatrix", "=", 
+                  RowBox[{"Join", "[", 
+                   RowBox[{"CoeffMatrix", ",", "\[IndentingNewLine]", 
+                    RowBox[{"First", "@", 
+                    RowBox[{"Last", "@", 
+                    RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                    RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"CoeffRow", "=", 
+                    RowBox[{"First", "@", 
+                    RowBox[{"Last", "@", 
+                    RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+                    RowBox[{"Do", "[", "\[IndentingNewLine]", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"Sow", "[", 
+                    RowBox[{"ReplaceAll", "[", 
+                    RowBox[{
+                    RowBox[{"Coefficient", "[", 
+                    RowBox[{"polyderiv", ",", "monom"}], "]"}], ",", 
+                    RowBox[{"Table", "[", 
+                    RowBox[{
+                    RowBox[{"Ki", "->", "0"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"Ki", ",", "KVec"}], "}"}]}], "]"}]}], "]"}], 
+                    "]"}], ";"}], "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"monom", ",", "AllMonoms"}], "}"}]}], "]"}], 
+                    "\[IndentingNewLine]", "]"}]}]}]}], ";", 
+                    "\[IndentingNewLine]", "\[IndentingNewLine]", 
+                    RowBox[{"Sow", "[", "CoeffRow", "]"}]}], 
+                    "\[IndentingNewLine]", "\[IndentingNewLine]", ",", 
+                    RowBox[{"{", 
+                    RowBox[{"polyderiv", ",", "PolyDerivs"}], "}"}]}], "]"}], 
+                    "\[IndentingNewLine]", "]"}]}]}]}], "\[IndentingNewLine]",
+                    "]"}]}], ";", "\[IndentingNewLine]", 
+                 "\[IndentingNewLine]", 
+                 RowBox[{"(*", 
+                  RowBox[{
+                   RowBox[{"Codimension", "=", 
+                    RowBox[{
+                    FractionBox[
+                    RowBox[{
+                    SuperscriptBox["Determinacy", "2"], "+", 
+                    RowBox[{"3", "Determinacy"}]}], "2"], "-", 
+                    RowBox[{"MatrixRank", "[", "CoeffMatrix", "]"}]}]}], ";", 
+                   " ", 
+                   RowBox[{
+                   "for", " ", "the", " ", "two", " ", "dimensional", " ", 
+                    RowBox[{"case", "."}]}]}], "*)"}], "\[IndentingNewLine]", 
+                 "\[IndentingNewLine]", 
+                 RowBox[{"Codimension", "=", 
+                  RowBox[{
+                   RowBox[{"Length", "[", "AllMonoms", "]"}], "-", 
+                   RowBox[{"MatrixRank", "[", "CoeffMatrix", "]"}]}]}], ";", 
+                 "\[IndentingNewLine]", "\[IndentingNewLine]", 
+                 "\[IndentingNewLine]", 
+                 RowBox[{"Print", "[", 
+                  RowBox[{
+                  "\"\<Polynomial has corank \>\"", ",", "Corank", ",", 
+                   "\"\<. It is \>\"", ",", "CurrDeg", ",", 
+                   "\"\<-determinate. Its determinacy is either \>\"", ",", 
+                   "CurrDeg", ",", "\"\< or \>\"", ",", 
+                   RowBox[{"CurrDeg", "-", "1"}], ",", 
+                   "\"\< and its codimension is \>\"", ",", "Codimension", 
+                   ",", "\"\<. Comparing with the known list of \
+singularities...\>\""}], "]"}], ";", "\[IndentingNewLine]", 
+                 RowBox[{"Break", "[", "]"}]}]}], "\[IndentingNewLine]", 
+               "]"}], ";"}], "\[IndentingNewLine]", "\[IndentingNewLine]", 
+             ",", 
+             RowBox[{"{", 
+              RowBox[{"CurrDeg", ",", "1", ",", "PolyDeg"}], "}"}]}], "]"}], 
+           ";"}], "\[IndentingNewLine]", ",", "\[IndentingNewLine]", 
+          "\[IndentingNewLine]", 
+          RowBox[{"(*", 
+           RowBox[{
+            RowBox[{
+             RowBox[{
+             "If", " ", "all", " ", "elements", " ", "of", " ", "the", " ", 
+              "Jacobian", " ", "are", " ", "zero", " ", "and", " ", 
+              "Corank"}], " ", "=", " ", "0"}], ",", " ", 
+            RowBox[{
+             RowBox[{
+             "we", " ", "have", " ", "a", " ", "good", " ", "old", " ", 
+              "non"}], "-", 
+             RowBox[{
+             "singular", " ", "quadratic", " ", "form", " ", "that", " ", 
+              "could", " ", "be", " ", "a", " ", "maximum"}]}], ",", " ", 
+            RowBox[{"minimum", " ", "or", " ", "a", " ", 
+             RowBox[{"saddle", "."}]}]}], "*)"}], "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{"Determinacy", "=", "2"}], ";", "\[IndentingNewLine]", 
+           RowBox[{"Codimension", "=", "1"}], ";", "\[IndentingNewLine]", 
+           "\[IndentingNewLine]", 
+           RowBox[{"Solved", "=", "True"}], ";"}]}], "\[IndentingNewLine]", 
+         "\[IndentingNewLine]", "]"}], ";", "\[IndentingNewLine]", 
+        "\[IndentingNewLine]", 
+        RowBox[{"Switch", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"Corank", ",", "Codimension", ",", "Determinacy"}], "}"}], 
+          ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "1", ",", "2"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial is equivalent to an ordinary quadratic form with \
+a non-singular Hessian.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "1", ",", "2"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a fold (\!\(\*SubscriptBox[\(A\), \(2\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "1", ",", "3"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a fold (\!\(\*SubscriptBox[\(A\), \(2\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "2", ",", "3"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a cusp (\!\(\*SubscriptBox[\(A\), \(3\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "2", ",", "4"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a cusp (\!\(\*SubscriptBox[\(A\), \(3\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "3", ",", "4"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a swallowtail (\!\(\*SubscriptBox[\(A\), \
+\(4\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "3", ",", "5"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a swallowtail (\!\(\*SubscriptBox[\(A\), \
+\(4\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "4", ",", "5"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a butterfly (\!\(\*SubscriptBox[\(A\), \(5\)]\
+\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "4", ",", "6"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a butterfly (\!\(\*SubscriptBox[\(A\), \(5\)]\
+\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "5", ",", "6"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a wigwam (\!\(\*SubscriptBox[\(A\), \(6\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "5", ",", "7"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a wigwam (\!\(\*SubscriptBox[\(A\), \(6\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "6", ",", "7"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a star (\!\(\*SubscriptBox[\(A\), \(7\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"1", ",", "6", ",", "8"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a cusp (\!\(\*SubscriptBox[\(A\), \(7\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "3", ",", "2"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has either an elliptic umbilic \
+(\!\(\*SubsuperscriptBox[\(D\), \(4\), \(-\)]\)) (monkey saddle) or a \
+hyperbolic umbilic (\!\(\*SubsuperscriptBox[\(D\), \(4\), \(+\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "3", ",", "3"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has either an elliptic umbilic \
+(\!\(\*SubsuperscriptBox[\(D\), \(4\), \(-\)]\)) (monkey saddle) or a \
+hyperbolic umbilic (\!\(\*SubsuperscriptBox[\(D\), \(4\), \(+\)]\)) \
+catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "4", ",", "3"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a parabolic umbilic \
+(\!\(\*SubscriptBox[\(D\), \(5\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", 
+          "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "4", ",", "4"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a parabolic umbilic \
+(\!\(\*SubscriptBox[\(D\), \(5\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", 
+          "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "5", ",", "3"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a symbolic umbilic (\!\(\*SubscriptBox[\(E\), \
+\(6\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "5", ",", "4"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has a symbolic umbilic (\!\(\*SubscriptBox[\(E\), \
+\(6\)]\)) catastrophe.\>\"", "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "5", ",", "4"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has either a second elliptic umbilic \
+(\!\(\*SubsuperscriptBox[\(D\), \(6\), \(-\)]\)) or a second hyperbolic \
+umbilic (\!\(\*SubsuperscriptBox[\(D\), \(6\), \(+\)]\)) catastrophe.\>\"", 
+            "]"}], ";"}], ",", "\[IndentingNewLine]", 
+          RowBox[{"{", 
+           RowBox[{"2", ",", "5", ",", "5"}], "}"}], ",", 
+          RowBox[{
+           RowBox[{
+           "Print", "[", 
+            "\"\<Polynomial has either a second elliptic umbilic \
+(\!\(\*SubsuperscriptBox[\(D\), \(6\), \(-\)]\)) or a second hyperbolic \
+umbilic (\!\(\*SubsuperscriptBox[\(D\), \(6\), \(+\)]\)) catastrophe.\>\"", 
+            "]"}], ";"}], ",", "\[IndentingNewLine]", "_", ",", 
+          "\[IndentingNewLine]", 
+          RowBox[{"If", "[", 
+           RowBox[{
+            RowBox[{"Solved", "==", "True"}], ",", 
+            RowBox[{
+            "Print", "[", "\"\<Point singularity not identified by name!\>\"",
+              "]"}], ",", "\[IndentingNewLine]", 
+            RowBox[{
+             RowBox[{
+             "Print", "[", 
+              "\"\<The polynomial appears to host a singularity that does not \
+have a finite determinacy.\>\"", "]"}], ";", "\[IndentingNewLine]", 
+             RowBox[{"Determinacy", "=", "\[Infinity]"}], ";", 
+             "\[IndentingNewLine]", 
+             RowBox[{"Codimension", "=", "\[Infinity]"}], ";"}]}], 
+           "\[IndentingNewLine]", "]"}]}], "\[IndentingNewLine]", "]"}]}], 
+       "\[IndentingNewLine]", ",", "\[IndentingNewLine]", 
+       "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"Solved", "=", "True"}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Determinacy", "=", "1"}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Codimension", "=", "0"}], ";", "\[IndentingNewLine]", 
+        RowBox[{
+        "Print", "[", 
+         "\"\<The given polynomial does not have a critical point at the \
+origin. It is smoothly equivalent to a linear form, and has determinacy \
+1.\>\"", "]"}], ";"}]}], "\[IndentingNewLine]", "]"}], ";", 
+     "\[IndentingNewLine]", "\[IndentingNewLine]", 
+     RowBox[{"{", 
+      RowBox[{"Corank", ",", "Codimension", ",", "Determinacy"}], "}"}]}]}], 
+   "\[IndentingNewLine]", "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.867990545982473*^9, 3.867990597092535*^9}, {
+   3.867990929747102*^9, 3.8679910010559797`*^9}, {3.867991143274083*^9, 
+   3.867991208272745*^9}, {3.867991305748786*^9, 3.867991306234013*^9}, {
+   3.86799148236169*^9, 3.8679914871746807`*^9}, {3.867991724376266*^9, 
+   3.867991784409313*^9}, {3.867991920270755*^9, 3.867991962162766*^9}, {
+   3.867992058845388*^9, 3.867992060288268*^9}, {3.8679921551903954`*^9, 
+   3.8679923970037127`*^9}, {3.867992910844569*^9, 3.867992935213682*^9}, {
+   3.867992976541782*^9, 3.8679931097777863`*^9}, {3.867993182809284*^9, 
+   3.8679931950354147`*^9}, {3.867993238853087*^9, 3.8679932727018557`*^9}, {
+   3.867993385670253*^9, 3.86799338936456*^9}, {3.8679934195137987`*^9, 
+   3.867993421938686*^9}, {3.867993774649417*^9, 3.867993793035244*^9}, {
+   3.867993918207671*^9, 3.8679940766965723`*^9}, {3.867994199386964*^9, 
+   3.8679942057833023`*^9}, {3.867994284989202*^9, 3.867994287997014*^9}, {
+   3.86799466776053*^9, 3.867994745106167*^9}, {3.867994781997765*^9, 
+   3.867994848324807*^9}, {3.867994881740877*^9, 3.8679948822732058`*^9}, {
+   3.8680119381027718`*^9, 3.8680119479721823`*^9}, {3.8680119832996397`*^9, 
+   3.868012058311701*^9}, {3.868012135566032*^9, 3.8680121877188673`*^9}, {
+   3.868012294878603*^9, 3.868012314762844*^9}, {3.868012394770853*^9, 
+   3.8680124477819557`*^9}, {3.86801248503732*^9, 3.8680124892956257`*^9}, {
+   3.86801349644703*^9, 3.868013503091709*^9}, {3.868013588783699*^9, 
+   3.86801364404027*^9}, {3.868013702931028*^9, 3.86801383960884*^9}, {
+   3.868013899001295*^9, 3.868013899712322*^9}, {3.8680139391517773`*^9, 
+   3.86801399630683*^9}, {3.868014036700075*^9, 3.868014042032811*^9}, {
+   3.8680141420913467`*^9, 3.868014161212542*^9}, {3.868014385295473*^9, 
+   3.868014429757328*^9}, {3.868015396001821*^9, 3.868015433870295*^9}, {
+   3.868015806200828*^9, 3.8680159299506063`*^9}, {3.868015967850741*^9, 
+   3.868015968124792*^9}, {3.868016019790223*^9, 3.868016055914585*^9}, {
+   3.8680160956534777`*^9, 3.868016160527115*^9}, {3.868016217690563*^9, 
+   3.868016257438541*^9}, {3.8680163061523237`*^9, 3.868016324942326*^9}, {
+   3.868016374590152*^9, 3.868016376362008*^9}, {3.868016571702993*^9, 
+   3.868016574337912*^9}, {3.868016611234864*^9, 3.86801661391908*^9}, {
+   3.868016653301393*^9, 3.8680166761527367`*^9}, {3.868016707556477*^9, 
+   3.868016737105885*^9}, {3.86801678168307*^9, 3.8680169738610687`*^9}, {
+   3.8680170707437897`*^9, 3.86801707619171*^9}, {3.868017144461616*^9, 
+   3.8680171766414623`*^9}, {3.868017263351714*^9, 3.868017301924355*^9}, {
+   3.8680173739065247`*^9, 3.8680173899845457`*^9}, {3.868017470970766*^9, 
+   3.868017483222028*^9}, {3.868017595903232*^9, 3.8680177740613937`*^9}, {
+   3.868094063813119*^9, 3.868094098901816*^9}, {3.868094153310391*^9, 
+   3.868094177859235*^9}, {3.868094210937416*^9, 3.868094289430716*^9}, {
+   3.868094355970722*^9, 3.868094427830721*^9}, {3.86809445894561*^9, 
+   3.868094469551543*^9}, {3.8680945044712887`*^9, 3.8680945106897907`*^9}, {
+   3.868094544074622*^9, 3.8680945735288963`*^9}, {3.868094720590502*^9, 
+   3.868094739976934*^9}, {3.868094841526205*^9, 3.8680948500740433`*^9}, {
+   3.868094923008236*^9, 3.86809507038787*^9}, {3.868095119465147*^9, 
+   3.8680951290275583`*^9}, {3.868095162613759*^9, 3.868095163495985*^9}, {
+   3.868095205704705*^9, 3.868095207260948*^9}, {3.868095257089835*^9, 
+   3.868095257649116*^9}, {3.8680953187300386`*^9, 3.8680953627229977`*^9}, {
+   3.8680954031178417`*^9, 3.868095441314028*^9}, {3.868095496034408*^9, 
+   3.868095607380878*^9}, {3.868095652490119*^9, 3.8680958964699497`*^9}, {
+   3.868095942476644*^9, 3.8680959829894876`*^9}, {3.8680962160794907`*^9, 
+   3.868096265704146*^9}, {3.868096304785694*^9, 3.868096397095002*^9}, {
+   3.86809646443522*^9, 3.86809707611292*^9}, {3.868097112303371*^9, 
+   3.8680972052436857`*^9}, {3.868097237707736*^9, 3.868097294848137*^9}, {
+   3.868097369205288*^9, 3.8680973723411083`*^9}, {3.8680975552110147`*^9, 
+   3.868097619627692*^9}, {3.868097685689896*^9, 3.8680979844948177`*^9}, {
+   3.868098647577229*^9, 3.868098655546949*^9}, {3.868098737721052*^9, 
+   3.8680987858623123`*^9}, {3.868098918962206*^9, 3.868098943467799*^9}, {
+   3.8680995334411716`*^9, 3.868099589611627*^9}, {3.868099621436516*^9, 
+   3.868099621852652*^9}, {3.8681028641309633`*^9, 3.86810290277822*^9}, {
+   3.868102977104707*^9, 3.8681029884468527`*^9}, {3.868103019104939*^9, 
+   3.868103029364955*^9}, {3.8681031078145533`*^9, 3.8681031084199553`*^9}, {
+   3.868103165160572*^9, 3.868103169777046*^9}, {3.868103201431301*^9, 
+   3.86810320866886*^9}, {3.868103256709066*^9, 3.8681032615375357`*^9}, {
+   3.868103329063568*^9, 3.868103456938538*^9}, 3.868103543952423*^9, {
+   3.868105070930202*^9, 3.868105229579275*^9}, {3.8681055227499037`*^9, 
+   3.868105523048717*^9}, {3.868105752136653*^9, 3.868105752276915*^9}, {
+   3.8681057947921677`*^9, 3.868105795222663*^9}, {3.8681058570809317`*^9, 
+   3.868105873775921*^9}, {3.8681059519156027`*^9, 3.868105954096098*^9}, {
+   3.868106098240225*^9, 3.868106157796905*^9}, {3.868507381642228*^9, 
+   3.8685086693996153`*^9}, {3.8685087590671053`*^9, 
+   3.8685088124410057`*^9}, {3.868509122239393*^9, 3.868509379963661*^9}, {
+   3.868509666545813*^9, 3.8685096838941927`*^9}, {3.868510368343174*^9, 
+   3.8685103954103193`*^9}, {3.868510431552195*^9, 3.868510512950245*^9}, {
+   3.8685106935406027`*^9, 3.868510704767075*^9}, {3.86851073584135*^9, 
+   3.868510772986665*^9}, {3.868510803450966*^9, 3.868510821920189*^9}},
+ CellLabel->"In[18]:=",ExpressionUUID->"9513ae39-5dd1-42a8-bf93-916abb5e6cad"],
+
+Cell[TextData[{
+ "We shall now benchmark this function against a number of known \
+singularities. We shall start with two examples drawn from page 8 of our \
+earlier ",
+ ButtonBox["paper",
+  BaseStyle->"Hyperlink",
+  ButtonData->{
+    URL["https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.2.\
+013355"], None},
+  ButtonNote->
+   "https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.2.013355"],
+ ". The two polynomials treated there are deceptively close to each other and \
+even have almost identical looking constant energy contours (level sets). \
+Nevertheless they are distinct singularities leading to different power law \
+divergence for density of states. We begin with the first one:"
+}], "Text",
+ CellChangeTimes->{{3.8680982038776712`*^9, 3.8680983544655437`*^9}, {
+  3.868098392524499*^9, 3.868098420162154*^9}, {3.868509481789033*^9, 
+  3.868509484722165*^9}},ExpressionUUID->"0aee1f3f-a45e-4614-8386-\
+a9ccc8114b02"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   RowBox[{"-", 
+    SuperscriptBox["ky", "2"]}], "+", 
+   RowBox[{"6", 
+    SuperscriptBox["kx", "2"], "ky"}], "-", 
+   RowBox[{"9", 
+    SuperscriptBox["kx", "4"]}], "+", 
+   SuperscriptBox["kx", "6"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.8679914897472363`*^9, 3.867991559902205*^9}, {
+   3.8679917954745502`*^9, 3.867991805228147*^9}, 3.867993121986577*^9, {
+   3.867994231045299*^9, 3.867994262789763*^9}, {3.8680147214548187`*^9, 
+   3.868014728679823*^9}, {3.8680169265123034`*^9, 3.868016926909671*^9}, {
+   3.868017801650649*^9, 3.8680178019477463`*^9}},
+ CellLabel->"In[2]:=",ExpressionUUID->"82cb932f-91c5-4020-a11b-47c1fb9be837"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 2, 1, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.8680167282878637`*^9, 3.868016741471792*^9}, {
+   3.868016927474575*^9, 3.868016949611148*^9}, {3.8680170613313704`*^9, 
+   3.86801707968652*^9}, 3.8680171811366043`*^9, {3.868017778859797*^9, 
+   3.868017802487256*^9}, 3.868093969635236*^9, 3.8680944915879393`*^9, 
+   3.868094579476499*^9, 3.868095086017598*^9, 3.8680951894523163`*^9, 
+   3.8680959892850857`*^9, 3.868097088589497*^9, 3.868097302420746*^9, 
+   3.868097380039521*^9, 3.868098801701151*^9, 3.868098950538053*^9, 
+   3.868102992970484*^9, 3.868103462761421*^9, 3.868509396962317*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"1c5b1a65-bc15-477d-acd3-6069974d9f33"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 2, 2, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.8680167282878637`*^9, 3.868016741471792*^9}, {
+   3.868016927474575*^9, 3.868016949611148*^9}, {3.8680170613313704`*^9, 
+   3.86801707968652*^9}, 3.8680171811366043`*^9, {3.868017778859797*^9, 
+   3.868017802487256*^9}, 3.868093969635236*^9, 3.8680944915879393`*^9, 
+   3.868094579476499*^9, 3.868095086017598*^9, 3.8680951894523163`*^9, 
+   3.8680959892850857`*^9, 3.868097088589497*^9, 3.868097302420746*^9, 
+   3.868097380039521*^9, 3.868098801701151*^9, 3.868098950538053*^9, 
+   3.868102992970484*^9, 3.868103462761421*^9, 3.868509397014909*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"00fd53fa-0de5-4058-a321-8c4b524b8757"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 2, 3, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.8680167282878637`*^9, 3.868016741471792*^9}, {
+   3.868016927474575*^9, 3.868016949611148*^9}, {3.8680170613313704`*^9, 
+   3.86801707968652*^9}, 3.8680171811366043`*^9, {3.868017778859797*^9, 
+   3.868017802487256*^9}, 3.868093969635236*^9, 3.8680944915879393`*^9, 
+   3.868094579476499*^9, 3.868095086017598*^9, 3.8680951894523163`*^9, 
+   3.8680959892850857`*^9, 3.868097088589497*^9, 3.868097302420746*^9, 
+   3.868097380039521*^9, 3.868098801701151*^9, 3.868098950538053*^9, 
+   3.868102992970484*^9, 3.868103462761421*^9, 3.868509397017535*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"401fce2e-848f-44da-9736-584a1e622875"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 2, 4, 23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.8680167282878637`*^9, 3.868016741471792*^9}, {
+   3.868016927474575*^9, 3.868016949611148*^9}, {3.8680170613313704`*^9, 
+   3.86801707968652*^9}, 3.8680171811366043`*^9, {3.868017778859797*^9, 
+   3.868017802487256*^9}, 3.868093969635236*^9, 3.8680944915879393`*^9, 
+   3.868094579476499*^9, 3.868095086017598*^9, 3.8680951894523163`*^9, 
+   3.8680959892850857`*^9, 3.868097088589497*^9, 3.868097302420746*^9, 
+   3.868097380039521*^9, 3.868098801701151*^9, 3.868098950538053*^9, 
+   3.868102992970484*^9, 3.868103462761421*^9, 3.868509397020021*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"fd9f8828-77b9-484b-8077-10a6171ca29f"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ InterpretationBox[
+  RowBox[{"\<\"Polynomial has corank \"\>", "\[InvisibleSpace]", "1", 
+   "\[InvisibleSpace]", "\<\". It is \"\>", "\[InvisibleSpace]", "6", 
+   "\[InvisibleSpace]", "\<\"-determinate. Its determinacy is either \"\>", 
+   "\[InvisibleSpace]", "6", "\[InvisibleSpace]", "\<\" or \"\>", 
+   "\[InvisibleSpace]", "5", 
+   "\[InvisibleSpace]", "\<\" and its codimension is \"\>", 
+   "\[InvisibleSpace]", "4", 
+   "\[InvisibleSpace]", "\<\". Comparing with the known list of \
+singularities...\"\>"}],
+  SequenceForm[
+  "Polynomial has corank ", 1, ". It is ", 6, 
+   "-determinate. Its determinacy is either ", 6, " or ", 5, 
+   " and its codimension is ", 4, 
+   ". Comparing with the known list of singularities..."],
+  Editable->False]], "Print",
+ CellChangeTimes->{
+  3.868016263623786*^9, {3.86801631520275*^9, 3.8680163796979856`*^9}, 
+   3.868016436391399*^9, 3.868016483773922*^9, 3.8680165773141336`*^9, 
+   3.8680166186390553`*^9, {3.8680166853405657`*^9, 3.868016741500329*^9}, {
+   3.868016927495665*^9, 3.868016949626647*^9}, {3.868017061348426*^9, 
+   3.8680170797049217`*^9}, 3.868017181156114*^9, {3.868017778877791*^9, 
+   3.868017802514488*^9}, 3.868093969694973*^9, 3.868094491586773*^9, 
+   3.868094579475175*^9, 3.868095086016501*^9, 3.868095189450959*^9, 
+   3.868095989282518*^9, 3.868097088587707*^9, 3.868097302419413*^9, 
+   3.868097380060021*^9, 3.868098801719494*^9, 3.868098950557975*^9, 
+   3.868102992994553*^9, 3.868103462790872*^9, 3.868509397022773*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"ae39f499-b632-4d71-9974-81300ce2383c"],
+
+Cell[BoxData["\<\"Polynomial has a butterfly (\\!\\(\\*SubscriptBox[\\(A\\), \
+\\(5\\)]\\)) catastrophe.\"\>"], "Print",
+ CellChangeTimes->{
+  3.868016263623786*^9, {3.86801631520275*^9, 3.8680163796979856`*^9}, 
+   3.868016436391399*^9, 3.868016483773922*^9, 3.8680165773141336`*^9, 
+   3.8680166186390553`*^9, {3.8680166853405657`*^9, 3.868016741500329*^9}, {
+   3.868016927495665*^9, 3.868016949626647*^9}, {3.868017061348426*^9, 
+   3.8680170797049217`*^9}, 3.868017181156114*^9, {3.868017778877791*^9, 
+   3.868017802514488*^9}, 3.868093969694973*^9, 3.868094491586773*^9, 
+   3.868094579475175*^9, 3.868095086016501*^9, 3.868095189450959*^9, 
+   3.868095989282518*^9, 3.868097088587707*^9, 3.868097302419413*^9, 
+   3.868097380060021*^9, 3.868098801719494*^9, 3.868098950557975*^9, 
+   3.868102992994553*^9, 3.868103462790872*^9, 3.868509397023324*^9},
+ CellLabel->
+  "During evaluation of \
+In[2]:=",ExpressionUUID->"d3c8bef3-586a-4aec-8cce-d0daad6c9f13"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"1", ",", "4", ",", "6"}], "}"}]], "Output",
+ CellChangeTimes->{3.868102992996914*^9, 3.868103462793185*^9, 
+  3.8685093970242767`*^9},
+ CellLabel->"Out[2]=",ExpressionUUID->"826e84d3-47d8-4a33-87d8-a2080b6e4442"]
+}, Open  ]],
+
+Cell["\<\
+Now the second one is only slightly different, as mentioned earlier:\
+\>", "Text",
+ CellChangeTimes->{{3.868098423230847*^9, 
+  3.8680984473913527`*^9}},ExpressionUUID->"93f21649-2fb6-4304-a91d-\
+a6316e4e03cf"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   RowBox[{"-", 
+    SuperscriptBox["ky", "2"]}], "+", 
+   RowBox[{"6", 
+    SuperscriptBox["kx", "2"], "ky"}], "-", 
+   RowBox[{"8", 
+    SuperscriptBox["kx", "4"]}], "+", 
+   SuperscriptBox["kx", "6"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868093978710614*^9, 3.868093979027306*^9}, {
+  3.8685107413397293`*^9, 3.868510743968913*^9}},
+ CellLabel->"In[20]:=",ExpressionUUID->"45db16d1-c3b9-41ca-b21d-1abecc790294"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 20, 5, 
+   23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868510846724648*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"1f81322f-e454-4780-a346-66e8bb9791ea"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 20, 6, 
+   23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868510846729212*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"7aa16c07-20e5-4528-9830-19e22c89af62"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 20, 7, 
+   23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868510846732545*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"cc9dcf70-6c05-4cf9-b71e-d9f670388977"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 20, 8, 23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868510846736219*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"eb5906f1-aa55-499e-8c88-dbc3cbf5829c"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ InterpretationBox[
+  RowBox[{"\<\"Polynomial has corank \"\>", "\[InvisibleSpace]", "1", 
+   "\[InvisibleSpace]", "\<\". It is \"\>", "\[InvisibleSpace]", "4", 
+   "\[InvisibleSpace]", "\<\"-determinate. Its determinacy is either \"\>", 
+   "\[InvisibleSpace]", "4", "\[InvisibleSpace]", "\<\" or \"\>", 
+   "\[InvisibleSpace]", "3", 
+   "\[InvisibleSpace]", "\<\" and its codimension is \"\>", 
+   "\[InvisibleSpace]", "2", 
+   "\[InvisibleSpace]", "\<\". Comparing with the known list of \
+singularities...\"\>"}],
+  SequenceForm[
+  "Polynomial has corank ", 1, ". It is ", 4, 
+   "-determinate. Its determinacy is either ", 4, " or ", 3, 
+   " and its codimension is ", 2, 
+   ". Comparing with the known list of singularities..."],
+  Editable->False]], "Print",
+ CellChangeTimes->{3.868510846739505*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"4e52803c-4f69-49c9-a571-e07c30264414"],
+
+Cell[BoxData["\<\"Polynomial has a cusp (\\!\\(\\*SubscriptBox[\\(A\\), \
+\\(3\\)]\\)) catastrophe.\"\>"], "Print",
+ CellChangeTimes->{3.868510846740206*^9},
+ CellLabel->
+  "During evaluation of \
+In[20]:=",ExpressionUUID->"fd819ad8-99eb-485a-9084-7d1bc9a2e899"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"1", ",", "2", ",", "4"}], "}"}]], "Output",
+ CellChangeTimes->{
+  3.868102995952282*^9, 3.8681034647978487`*^9, 3.8685094096661882`*^9, {
+   3.868510741725018*^9, 3.8685107445079937`*^9}, 3.868510846741519*^9},
+ CellLabel->"Out[20]=",ExpressionUUID->"621b11df-71a7-4459-8eba-f3ab95763e9a"]
+}, Open  ]],
+
+Cell[TextData[{
+ "We can try feeding it another familiar singularity, namely the monkey \
+saddle. To spice things up a bit, let us add a quartic part and a ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["z", "2"], TraditionalForm]],
+  FormatType->TraditionalForm,ExpressionUUID->
+  "03b9b356-3799-4299-9f17-3396933ffdc9"],
+ " term to it (that increases the dimension). As mentioned above, the \
+function is smart enough to figure out the variables and the degree, so we \
+don\[CloseCurlyQuote]t have to follow any particular naming convention for \
+the variables."
+}], "Text",
+ CellChangeTimes->{{3.868098453571753*^9, 3.868098528583613*^9}, {
+  3.868102962912002*^9, 
+  3.868102969543193*^9}},ExpressionUUID->"792bd887-faf3-44c7-972a-\
+cf55536a697a"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   SuperscriptBox["kx", "3"], "-", 
+   RowBox[{"3", "kx", " ", 
+    SuperscriptBox["ky", "2"]}], "+", 
+   RowBox[{"4", 
+    SuperscriptBox[
+     RowBox[{"(", 
+      RowBox[{
+       SuperscriptBox["kx", "2"], "+", 
+       SuperscriptBox["ky", "2"]}], ")"}], "2"]}], "+", 
+   SuperscriptBox["z", "2"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868094007361376*^9, 3.868094036429366*^9}, {
+  3.868098531991548*^9, 3.868098534349102*^9}, {3.868510656285161*^9, 
+  3.868510669516143*^9}},
+ CellLabel->"In[12]:=",ExpressionUUID->"2916e4a8-6e21-4791-9f65-082d1fcecab4"],
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   SuperscriptBox["kx", "3"], "-", 
+   RowBox[{"3", " ", "kx", " ", 
+    SuperscriptBox["ky", "2"]}], "+", 
+   RowBox[{"4", " ", 
+    SuperscriptBox[
+     RowBox[{"(", 
+      RowBox[{
+       SuperscriptBox["kx", "2"], "+", 
+       SuperscriptBox["ky", "2"]}], ")"}], "2"]}], "+", 
+   SuperscriptBox["z", "2"]}], "]"}]], "Output",
+ CellChangeTimes->{
+  3.8681029982916594`*^9, 3.8681034689438543`*^9, 3.868509414580811*^9, 
+   3.868510563689658*^9, {3.868510614231412*^9, 3.8685106166149187`*^9}, {
+   3.868510656752449*^9, 3.868510670982667*^9}, 3.868510719445628*^9},
+ CellLabel->"Out[12]=",ExpressionUUID->"4aa716c8-2bce-4733-a16a-09742edc07a6"]
+}, Open  ]],
+
+Cell["\<\
+Let us look at the example treated in the notebook \
+\[OpenCurlyQuote]Band_Series_Expansion.nb\[CloseCurlyQuote], where we \
+obtained the monkey saddle (elliptic umbilic catastrophe) in the Haldane \
+model:\
+\>", "Text",
+ CellChangeTimes->{{3.868510223644693*^9, 3.868510292732862*^9}, {
+  3.868510948692614*^9, 
+  3.868510951166375*^9}},ExpressionUUID->"cd1b18c1-2775-4837-b7fc-\
+e479ce62d174"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{"0.5773502691896257`", "\[VeryThinSpace]", "+", 
+   RowBox[{"3.28819020499404`", " ", 
+    SuperscriptBox["p1", "4"]}], "+", 
+   RowBox[{"3.8971143170299682`", " ", 
+    SuperscriptBox["p1", "2"], " ", "p2"}], "+", 
+   RowBox[{"6.576380409988073`", " ", 
+    SuperscriptBox["p1", "2"], " ", 
+    SuperscriptBox["p2", "2"]}], "-", 
+   RowBox[{"1.299038105676661`", " ", 
+    SuperscriptBox["p2", "3"]}], "+", 
+   RowBox[{"3.28819020499404`", " ", 
+    SuperscriptBox["p2", "4"]}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868510275270685*^9, 3.868510298999145*^9}},
+ CellLabel->"In[19]:=",ExpressionUUID->"aca1bd45-e7b5-4714-b707-3bd184289593"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 19, 3, 
+   23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.8685107866576767`*^9, 3.8685108334278307`*^9},
+ CellLabel->
+  "During evaluation of \
+In[19]:=",ExpressionUUID->"ddd40d00-12d0-4a43-8d68-5f714b56f94c"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 19, 4, 
+   23606457917667095667, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.8685107866576767`*^9, 3.86851083343287*^9},
+ CellLabel->
+  "During evaluation of \
+In[19]:=",ExpressionUUID->"c697e500-b91f-4504-930a-919847c83ad1"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ InterpretationBox[
+  RowBox[{"\<\"Polynomial has corank \"\>", "\[InvisibleSpace]", "2", 
+   "\[InvisibleSpace]", "\<\". It is \"\>", "\[InvisibleSpace]", "3", 
+   "\[InvisibleSpace]", "\<\"-determinate. Its determinacy is either \"\>", 
+   "\[InvisibleSpace]", "3", "\[InvisibleSpace]", "\<\" or \"\>", 
+   "\[InvisibleSpace]", "2", 
+   "\[InvisibleSpace]", "\<\" and its codimension is \"\>", 
+   "\[InvisibleSpace]", "3", 
+   "\[InvisibleSpace]", "\<\". Comparing with the known list of \
+singularities...\"\>"}],
+  SequenceForm[
+  "Polynomial has corank ", 2, ". It is ", 3, 
+   "-determinate. Its determinacy is either ", 3, " or ", 2, 
+   " and its codimension is ", 3, 
+   ". Comparing with the known list of singularities..."],
+  Editable->False]], "Print",
+ CellChangeTimes->{3.868510784636664*^9, 3.8685108334387836`*^9},
+ CellLabel->
+  "During evaluation of \
+In[19]:=",ExpressionUUID->"63235146-9a43-47c4-b6a7-93c2942ee964"],
+
+Cell[BoxData["\<\"Polynomial has either an elliptic umbilic \
+(\\!\\(\\*SubsuperscriptBox[\\(D\\), \\(4\\), \\(-\\)]\\)) (monkey saddle) or \
+a hyperbolic umbilic (\\!\\(\\*SubsuperscriptBox[\\(D\\), \\(4\\), \
+\\(+\\)]\\)) catastrophe.\"\>"], "Print",
+ CellChangeTimes->{3.868510784636664*^9, 3.8685108334397297`*^9},
+ CellLabel->
+  "During evaluation of \
+In[19]:=",ExpressionUUID->"f2888cb3-abad-48b4-b578-b2029f9221ab"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"2", ",", "3", ",", "3"}], "}"}]], "Output",
+ CellChangeTimes->{
+  3.8685103014251757`*^9, 3.868510401549695*^9, 3.868510480946247*^9, {
+   3.868510523733345*^9, 3.868510580795981*^9}, 3.868510786713372*^9, 
+   3.8685108334414797`*^9},
+ CellLabel->"Out[19]=",ExpressionUUID->"5f76cefb-8175-49ee-a1f8-2eb8ae7ff73e"]
+}, Open  ]],
+
+Cell["The unnamed singularities can also be detected:", "Text",
+ CellChangeTimes->{{3.868103594430477*^9, 
+  3.8681036182486897`*^9}},ExpressionUUID->"7ed6fc4a-545a-4f7b-8730-\
+ff0b9d2cee9b"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   RowBox[{
+    SuperscriptBox["u", "2"], "v"}], "-", 
+   SuperscriptBox["v", "7"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868103620574568*^9, 3.868103648728997*^9}, {
+  3.868103734669907*^9, 3.868103734789776*^9}, {3.868104003290554*^9, 
+  3.868104019994089*^9}},
+ CellLabel->"In[7]:=",ExpressionUUID->"07d878bb-7309-4f62-8884-d3cc58281123"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 7, 19, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868103650510098*^9, 3.868103735312634*^9, 
+  3.868104021795508*^9, 3.868105691125375*^9, 3.868509439889974*^9, 
+  3.868509570116536*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"00802776-7879-4363-be32-1b6de6a49fc1"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 7, 20, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868103650510098*^9, 3.868103735312634*^9, 
+  3.868104021795508*^9, 3.868105691125375*^9, 3.868509439889974*^9, 
+  3.8685095701213923`*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"7f496072-44be-43d8-ad42-6b95c4b56615"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 7, 21, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868103650510098*^9, 3.868103735312634*^9, 
+  3.868104021795508*^9, 3.868105691125375*^9, 3.868509439889974*^9, 
+  3.86850957012604*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"6ddec645-cc83-4523-b6fb-7fc0763e9d12"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 7, 22, 23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{3.868103650510098*^9, 3.868103735312634*^9, 
+  3.868104021795508*^9, 3.868105691125375*^9, 3.868509439889974*^9, 
+  3.868509570129839*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"3abcd065-3f63-48a9-8b9a-c3fc88ddf79a"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ InterpretationBox[
+  RowBox[{"\<\"Polynomial has corank \"\>", "\[InvisibleSpace]", "2", 
+   "\[InvisibleSpace]", "\<\". It is \"\>", "\[InvisibleSpace]", "7", 
+   "\[InvisibleSpace]", "\<\"-determinate. Its determinacy is either \"\>", 
+   "\[InvisibleSpace]", "7", "\[InvisibleSpace]", "\<\" or \"\>", 
+   "\[InvisibleSpace]", "6", 
+   "\[InvisibleSpace]", "\<\" and its codimension is \"\>", 
+   "\[InvisibleSpace]", "7", 
+   "\[InvisibleSpace]", "\<\". Comparing with the known list of \
+singularities...\"\>"}],
+  SequenceForm[
+  "Polynomial has corank ", 2, ". It is ", 7, 
+   "-determinate. Its determinacy is either ", 7, " or ", 6, 
+   " and its codimension is ", 7, 
+   ". Comparing with the known list of singularities..."],
+  Editable->False]], "Print",
+ CellChangeTimes->{3.868103650526609*^9, 3.868103735334833*^9, 
+  3.8681040218249683`*^9, 3.8681056911580143`*^9, 3.868509439920752*^9, 
+  3.868509570145708*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"f6bf3f30-1566-460d-945c-89ad9c4f7aea"],
+
+Cell[BoxData["\<\"Point singularity not identified by name!\"\>"], "Print",
+ CellChangeTimes->{3.868103650526609*^9, 3.868103735334833*^9, 
+  3.8681040218249683`*^9, 3.8681056911580143`*^9, 3.868509439920752*^9, 
+  3.8685095701464767`*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"145bbae6-ba73-4593-b1b6-9f91159c7ba8"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"2", ",", "7", ",", "7"}], "}"}]], "Output",
+ CellChangeTimes->{3.868103650527317*^9, 3.8681037353356323`*^9, 
+  3.868104021827079*^9, 3.868105691160342*^9, 3.868509439922763*^9, 
+  3.8685095701476107`*^9},
+ CellLabel->"Out[7]=",ExpressionUUID->"7e466404-ddaa-4a2f-a1f1-b75d4b0935bd"]
+}, Open  ]],
+
+Cell[TextData[{
+ "Now we look at one of the so called unimodal singularities which have a \
+continuous real parameter giving rise to distinct singularities. Perhaps the \
+main one of interest in band theoretic systems is the ",
+ Cell[BoxData[
+  FormBox[
+   SubscriptBox["X", "9"], TraditionalForm]],ExpressionUUID->
+  "c3c90662-9bd0-4db0-bd9d-c705d69945e4"],
+ " singularity class, which is a collection of distinct, non-equivalent \
+singularities of the form ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SubsuperscriptBox["k", "x", "4"], "+", 
+    SubsuperscriptBox["k", "y", "4"], "+", 
+    RowBox[{"2", "c", " ", 
+     SubsuperscriptBox["k", "x", "2"], 
+     SubsuperscriptBox["k", "y", "2"]}]}], TraditionalForm]],ExpressionUUID->
+  "7b2ed60b-e1f4-4044-8c61-e2c16b34bc63"],
+ " for real c. They all have corank 2. For the case ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"c", "=", 
+    RowBox[{"-", "3"}]}], TraditionalForm]],ExpressionUUID->
+  "85d10d38-dd37-4a3e-bbbf-98b407781d08"],
+ " (which has particle-hole symmetry), it has codimension 8 and determinacy \
+4. Let us check it with the algorithm, feeding a maximum determinacy check \
+value of 4 (equal to the degree of the polynomial). The reason for this extra \
+input will become clear below."
+}], "Text",
+ CellChangeTimes->{{3.868104059546927*^9, 3.86810419966366*^9}, {
+  3.8681042474588203`*^9, 3.868104299619404*^9}, {3.868104515532044*^9, 
+  3.8681045309946737`*^9}, {3.8681052987749147`*^9, 3.868105303469075*^9}, {
+  3.8681055337333097`*^9, 3.868105590946229*^9}, {3.868509587029566*^9, 
+  3.8685095874157887`*^9}},ExpressionUUID->"91322c49-112e-40c6-8ab0-\
+a73de1c87afa"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   RowBox[{
+    SuperscriptBox["u", "4"], "-", 
+    RowBox[{"6", 
+     SuperscriptBox["u", "2"], 
+     SuperscriptBox["v", "2"]}], "+", 
+    SuperscriptBox["v", "4"]}], ",", "4"}], "]"}]], "Input",
+ CellChangeTimes->{{3.868104336265156*^9, 3.868104362963966*^9}, {
+  3.8681054332047043`*^9, 3.868105433727549*^9}},
+ CellLabel->"In[6]:=",ExpressionUUID->"1167312d-8312-4731-a0ba-0dbf2fe5fa37"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 6, 15, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868104364833378*^9, 3.868105441300373*^9, {3.868106142587372*^9, 
+   3.868106165013769*^9}, 3.868509448488647*^9},
+ CellLabel->
+  "During evaluation of \
+In[6]:=",ExpressionUUID->"fe35683e-5659-4126-8338-02a7a6547310"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 6, 16, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868104364833378*^9, 3.868105441300373*^9, {3.868106142587372*^9, 
+   3.868106165013769*^9}, 3.868509448497608*^9},
+ CellLabel->
+  "During evaluation of \
+In[6]:=",ExpressionUUID->"2f2cdf69-9cca-4930-a617-8141fe9cabfc"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 6, 17, 
+   23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868104364833378*^9, 3.868105441300373*^9, {3.868106142587372*^9, 
+   3.868106165013769*^9}, 3.8685094485017023`*^9},
+ CellLabel->
+  "During evaluation of \
+In[6]:=",ExpressionUUID->"c3285975-a525-4955-a742-fd498e590cb6"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 6, 18, 23606436408704568802, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868104364833378*^9, 3.868105441300373*^9, {3.868106142587372*^9, 
+   3.868106165013769*^9}, 3.868509448505125*^9},
+ CellLabel->
+  "During evaluation of \
+In[6]:=",ExpressionUUID->"10fa1214-97ba-4a7f-833f-3c04c6a1f6c8"],
+
+Cell[BoxData["\<\"The polynomial appears to host a singularity that does not \
+have a finite determinacy.\"\>"], "Print",
+ CellChangeTimes->{
+  3.868104364854938*^9, 3.868105441322751*^9, {3.868106142606529*^9, 
+   3.8681061650339117`*^9}, 3.8685094485091667`*^9},
+ CellLabel->
+  "During evaluation of \
+In[6]:=",ExpressionUUID->"2e2cb06c-81e0-439f-9030-1187a8e69d24"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"2", ",", "\[Infinity]", ",", "\[Infinity]"}], "}"}]], "Output",
+ CellChangeTimes->{
+  3.868104364855762*^9, 3.868105441323601*^9, {3.868106142607546*^9, 
+   3.8681061650348454`*^9}, 3.8685094485098343`*^9},
+ CellLabel->"Out[6]=",ExpressionUUID->"566d2683-c53e-4de8-86ad-e47cf69337ae"]
+}, Open  ]],
+
+Cell["\<\
+So the algorithm appears to have misdiagnosed this unimodal singularity. The \
+reason is that we need to always check for determinacy up to one degree \
+higher than the degree of the polynomial, which is what the function does by \
+default. We just fed it a maximum degree of 4 to check for determinacy, on \
+purpose, in order to illustrate this point. If we instead simply just feed \
+the polynomial or the polynomial along with maximum determinacy check value \
+of 5:\
+\>", "Text",
+ CellChangeTimes->{{3.868104368924055*^9, 3.8681044643199377`*^9}, {
+  3.868104496408123*^9, 3.8681044998488827`*^9}, {3.8681053290318317`*^9, 
+  3.8681053448037252`*^9}, {3.868105391697103*^9, 3.8681054153104258`*^9}, {
+  3.8681054457967567`*^9, 3.868105513551079*^9}, {3.868105612577989*^9, 
+  3.868105629137238*^9}, {3.868106035810639*^9, 
+  3.868106037953401*^9}},ExpressionUUID->"140f1512-fba9-4a8b-8377-\
+8a3946e53f9e"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   SuperscriptBox["u", "4"], "-", 
+   RowBox[{"6", 
+    SuperscriptBox["u", "2"], 
+    SuperscriptBox["v", "2"]}], "+", 
+   SuperscriptBox["v", "4"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868105261843712*^9, 3.868105262302196*^9}, 
+   3.8681056337589817`*^9, {3.868105680641605*^9, 3.868105680793096*^9}, {
+   3.868105811075656*^9, 3.868105815000863*^9}, 3.868105894584971*^9},
+ CellLabel->"In[4]:=",ExpressionUUID->"7f2a9a15-6af2-495b-aa30-3cc832dbafd5"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 4, 5, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868105276785639*^9, 3.868105634128605*^9, {3.868105674517959*^9, 
+   3.8681056814113617`*^9}, {3.868105806473648*^9, 3.868105815726345*^9}, {
+   3.868105886086141*^9, 3.868105894951703*^9}, {3.868105929263525*^9, 
+   3.868105958777273*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"2806ef09-adab-4108-97e1-44e71ad903df"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 4, 6, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868105276785639*^9, 3.868105634128605*^9, {3.868105674517959*^9, 
+   3.8681056814113617`*^9}, {3.868105806473648*^9, 3.868105815726345*^9}, {
+   3.868105886086141*^9, 3.868105894951703*^9}, {3.868105929263525*^9, 
+   3.868105958783478*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"568f1375-d02b-4d32-a3ff-aec220ccc568"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 4, 7, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868105276785639*^9, 3.868105634128605*^9, {3.868105674517959*^9, 
+   3.8681056814113617`*^9}, {3.868105806473648*^9, 3.868105815726345*^9}, {
+   3.868105886086141*^9, 3.868105894951703*^9}, {3.868105929263525*^9, 
+   3.868105958788093*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"196caeac-44e3-4fdc-bf82-a0b98fae81d5"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 4, 8, 23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{
+  3.868105276785639*^9, 3.868105634128605*^9, {3.868105674517959*^9, 
+   3.8681056814113617`*^9}, {3.868105806473648*^9, 3.868105815726345*^9}, {
+   3.868105886086141*^9, 3.868105894951703*^9}, {3.868105929263525*^9, 
+   3.868105958793254*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"ba0a76ba-b224-4112-bf42-ba8785d9e584"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ InterpretationBox[
+  RowBox[{"\<\"Polynomial has corank \"\>", "\[InvisibleSpace]", "2", 
+   "\[InvisibleSpace]", "\<\". It is \"\>", "\[InvisibleSpace]", "5", 
+   "\[InvisibleSpace]", "\<\"-determinate. Its determinacy is either \"\>", 
+   "\[InvisibleSpace]", "5", "\[InvisibleSpace]", "\<\" or \"\>", 
+   "\[InvisibleSpace]", "4", 
+   "\[InvisibleSpace]", "\<\" and its codimension is \"\>", 
+   "\[InvisibleSpace]", "8", 
+   "\[InvisibleSpace]", "\<\". Comparing with the known list of \
+singularities...\"\>"}],
+  SequenceForm[
+  "Polynomial has corank ", 2, ". It is ", 5, 
+   "-determinate. Its determinacy is either ", 5, " or ", 4, 
+   " and its codimension is ", 8, 
+   ". Comparing with the known list of singularities..."],
+  Editable->False]], "Print",
+ CellChangeTimes->{
+  3.86810527680553*^9, 3.868105634151963*^9, {3.8681056745380087`*^9, 
+   3.8681056814338923`*^9}, {3.868105806494775*^9, 3.868105815745405*^9}, {
+   3.86810588608436*^9, 3.86810589497145*^9}, {3.86810592923829*^9, 
+   3.8681059587974586`*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"8a8b0560-bbd3-45e0-ad4e-2593050cdd15"],
+
+Cell[BoxData["\<\"Point singularity not identified by name!\"\>"], "Print",
+ CellChangeTimes->{
+  3.86810527680553*^9, 3.868105634151963*^9, {3.8681056745380087`*^9, 
+   3.8681056814338923`*^9}, {3.868105806494775*^9, 3.868105815745405*^9}, {
+   3.86810588608436*^9, 3.86810589497145*^9}, {3.86810592923829*^9, 
+   3.868105958798498*^9}},
+ CellLabel->
+  "During evaluation of \
+In[4]:=",ExpressionUUID->"5207a39e-8d26-4c62-a989-53ce253cd6cf"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"2", ",", "8", ",", "5"}], "}"}]], "Output",
+ CellChangeTimes->{{3.8681052629253263`*^9, 3.868105276807678*^9}, 
+   3.868105634152905*^9, {3.86810567453897*^9, 3.8681056814359007`*^9}, {
+   3.868105806496955*^9, 3.86810581574783*^9}, {3.8681058861063213`*^9, 
+   3.86810589497237*^9}, {3.8681059293267*^9, 3.868105958799656*^9}},
+ CellLabel->"Out[4]=",ExpressionUUID->"dab9a1a5-3342-4c60-a1ba-fb6fc195d5cd"]
+}, Open  ]],
+
+Cell["Of course, it also recognizes ordinary critical points:", "Text",
+ CellChangeTimes->{{3.868102760896862*^9, 
+  3.8681027804783907`*^9}},ExpressionUUID->"abf9b9c0-12d8-46c4-9c6a-\
+41cd53199c52"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   SuperscriptBox["x", "2"], "-", 
+   SuperscriptBox["v", "2"], "+", 
+   RowBox[{"v", " ", 
+    SuperscriptBox["x", "3"]}], "+", 
+   SuperscriptBox["x", "5"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868102783182074*^9, 3.868102814360469*^9}, 
+   3.868102886672762*^9},
+ CellLabel->"In[9]:=",ExpressionUUID->"96e36eea-46e3-4dc9-af8d-c7de2d2ff2d3"],
+
+Cell[BoxData["\<\"Polynomial is equivalent to an ordinary quadratic form with \
+a non-singular Hessian.\"\>"], "Print",
+ CellChangeTimes->{
+  3.868102815280328*^9, {3.868102881452392*^9, 3.868102912386222*^9}, 
+   3.868103003420789*^9, 3.868103472792128*^9, 3.868105684589315*^9, 
+   3.8685096979625807`*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"59711431-a3e0-4507-b6c3-6e5da1f81a85"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"0", ",", "1", ",", "2"}], "}"}]], "Output",
+ CellChangeTimes->{3.8681030034221487`*^9, 3.8681034727933683`*^9, 
+  3.86810568459105*^9, 3.868509697963976*^9},
+ CellLabel->"Out[9]=",ExpressionUUID->"fa7ec9ef-555a-484c-b722-30b9b3dfdde4"]
+}, Open  ]],
+
+Cell["\<\
+It can also detect situations wherein there is no critical point:\
+\>", "Text",
+ CellChangeTimes->{{3.868102915066545*^9, 3.868102940756977*^9}, 
+   3.868103487783142*^9},ExpressionUUID->"77a1d365-30ad-46c9-8b17-\
+0ad42587a255"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{"kx", "+", 
+   SuperscriptBox["ky", "2"], "-", 
+   SuperscriptBox["kx", "3"], "-", 
+   RowBox[{"3", "kx", " ", 
+    SuperscriptBox["ky", "2"]}], "+", 
+   RowBox[{"4", 
+    SuperscriptBox[
+     RowBox[{"(", 
+      RowBox[{
+       SuperscriptBox["kx", "2"], "+", 
+       SuperscriptBox["ky", "2"]}], ")"}], "2"]}], "+", 
+   SuperscriptBox["kz", "5"]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868096001467904*^9, 3.8680960125038023`*^9}, {
+  3.868104639387404*^9, 3.868104644645327*^9}, {3.868509711007428*^9, 
+  3.8685097144948378`*^9}},
+ CellLabel->"In[10]:=",ExpressionUUID->"96511565-ea86-43a2-9785-63f1a080c774"],
+
+Cell[BoxData["\<\"The given polynomial does not have a critical point at the \
+origin. It is smoothly equivalent to a linear form, and has determinacy \
+1.\"\>"], "Print",
+ CellChangeTimes->{3.868096013566028*^9, 3.8680973426453648`*^9, 
+  3.8681029443793583`*^9, 3.8681030072202673`*^9, 3.868103040564033*^9, 
+  3.868103474985347*^9, 3.868104645591223*^9, 3.868509715543502*^9},
+ CellLabel->
+  "During evaluation of \
+In[10]:=",ExpressionUUID->"31917157-2b24-4004-b822-05c0fce45361"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"2", ",", "0", ",", "1"}], "}"}]], "Output",
+ CellChangeTimes->{3.8681030072221327`*^9, 3.868103040565893*^9, 
+  3.868103474987109*^9, 3.868104645592847*^9, 3.868509715545107*^9},
+ CellLabel->"Out[10]=",ExpressionUUID->"a62ad612-b1e2-4751-95b6-e5d550ef581f"]
+}, Open  ]],
+
+Cell["\<\
+Lastly a situation when the singularity does not have finite determinacy:\
+\>", "Text",
+ CellChangeTimes->{{3.868103490518374*^9, 
+  3.8681035119316473`*^9}},ExpressionUUID->"2b925873-944d-41bf-aaa5-\
+5227e24e48bf"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"DiagnoseHOS", "[", 
+  RowBox[{
+   SuperscriptBox["x", "2"], "-", 
+   RowBox[{"x", " ", 
+    SuperscriptBox["y", "4"]}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.868103514741674*^9, 3.868103530385407*^9}},
+ CellLabel->"In[9]:=",ExpressionUUID->"2f1c4c50-5d9b-466b-914f-230d82f4d340"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 9, 17, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.868103530975286*^9, 3.8681035508569117`*^9}, 
+   3.868104664373205*^9, 3.868106176111405*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"8cd432d8-4af3-478e-b40c-5bd1d3c1f824"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 9, 18, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.868103530975286*^9, 3.8681035508569117`*^9}, 
+   3.868104664373205*^9, 3.868106176118156*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"124d6052-dd2d-4985-a830-6116e0543b03"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "LinearSolve", "nosol", 
+   "\"Linear equation encountered that has no solution.\"", 2, 9, 19, 
+   23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.868103530975286*^9, 3.8681035508569117`*^9}, 
+   3.868104664373205*^9, 3.868106176123177*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"6fcc7207-ce09-4017-8ed8-5f441ce65522"],
+
+Cell[BoxData[
+ TemplateBox[{
+  "General", "stop", 
+   "\"Further output of \\!\\(\\*StyleBox[RowBox[{\\\"LinearSolve\\\", \\\"::\
+\\\", \\\"nosol\\\"}], \\\"MessageName\\\"]\\) will be suppressed during this \
+calculation.\"", 2, 9, 20, 23603805741362395420, "Local"},
+  "MessageTemplate"]], "Message", "MSG",
+ CellChangeTimes->{{3.868103530975286*^9, 3.8681035508569117`*^9}, 
+   3.868104664373205*^9, 3.868106176127515*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"5f12cce4-1c43-4d24-9637-f69db604b86b"],
+
+Cell[BoxData["\<\"The polynomial appears to host a singularity that does not \
+have a finite determinacy.\"\>"], "Print",
+ CellChangeTimes->{{3.868103530999794*^9, 3.868103550874408*^9}, 
+   3.8681046643910646`*^9, 3.868106176131751*^9},
+ CellLabel->
+  "During evaluation of \
+In[9]:=",ExpressionUUID->"2173b6a4-6de0-4c77-ada0-7e9a51a69992"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"1", ",", "\[Infinity]", ",", "\[Infinity]"}], "}"}]], "Output",
+ CellChangeTimes->{{3.868103531000578*^9, 3.86810355087519*^9}, 
+   3.868104664391803*^9, 3.868106176132762*^9},
+ CellLabel->"Out[9]=",ExpressionUUID->"7228c0f1-4704-4b7c-bd84-fc18c6e6c0e5"]
+}, Open  ]]
+}, Open  ]]
+},
+WindowSize->{1447, 780},
+WindowMargins->{{4, Automatic}, {Automatic, 4}},
+PrintingCopies->1,
+PrintingPageRange->{1, Automatic},
+TaggingRules-><|"TryRealOnly" -> False|>,
+Magnification->1.5,
+FrontEndVersion->"13.0 for Mac OS X ARM (64-bit) (February 4, 2022)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"a9a40509-ba71-4ccf-ad47-34d8b8127fb7"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 186, 3, 146, "Title",ExpressionUUID->"fa6d5a84-a6cd-4acd-b29b-2d245fe11bb1"],
+Cell[769, 27, 166, 3, 47, "Author",ExpressionUUID->"d9c72d73-d40a-4bf3-aca4-c259b1f484e3"],
+Cell[938, 32, 235, 4, 46, "Affiliation",ExpressionUUID->"6e7fc7e6-5a1b-44b0-9955-f40454346063"],
+Cell[1176, 38, 273, 4, 46, "Affiliation",ExpressionUUID->"1557f184-4268-481d-a779-e67ea21e4643"],
+Cell[1452, 44, 859, 13, 191, "Text",ExpressionUUID->"a9c91893-2b19-4676-ba53-d302a7d6290f"],
+Cell[2314, 59, 46033, 920, 7495, "Input",ExpressionUUID->"9513ae39-5dd1-42a8-bf93-916abb5e6cad"],
+Cell[48350, 981, 954, 19, 157, "Text",ExpressionUUID->"0aee1f3f-a45e-4614-8386-a9ccc8114b02"],
+Cell[CellGroupData[{
+Cell[49329, 1004, 699, 15, 49, "Input",ExpressionUUID->"82cb932f-91c5-4020-a11b-47c1fb9be837"],
+Cell[50031, 1021, 878, 16, 41, "Message",ExpressionUUID->"1c5b1a65-bc15-477d-acd3-6069974d9f33"],
+Cell[50912, 1039, 878, 16, 41, "Message",ExpressionUUID->"00fd53fa-0de5-4058-a321-8c4b524b8757"],
+Cell[51793, 1057, 878, 16, 41, "Message",ExpressionUUID->"401fce2e-848f-44da-9736-584a1e622875"],
+Cell[52674, 1075, 985, 17, 41, "Message",ExpressionUUID->"fd9f8828-77b9-484b-8077-10a6171ca29f"],
+Cell[CellGroupData[{
+Cell[53684, 1096, 1622, 30, 66, "Print",ExpressionUUID->"ae39f499-b632-4d71-9974-81300ce2383c"],
+Cell[55309, 1128, 962, 15, 37, "Print",ExpressionUUID->"d3c8bef3-586a-4aec-8cce-d0daad6c9f13"]
+}, Open  ]],
+Cell[56286, 1146, 252, 5, 69, "Output",ExpressionUUID->"826e84d3-47d8-4a33-87d8-a2080b6e4442"]
+}, Open  ]],
+Cell[56553, 1154, 220, 5, 53, "Text",ExpressionUUID->"93f21649-2fb6-4304-a91d-a6316e4e03cf"],
+Cell[CellGroupData[{
+Cell[56798, 1163, 473, 12, 49, "Input",ExpressionUUID->"45db16d1-c3b9-41ca-b21d-1abecc790294"],
+Cell[57274, 1177, 349, 9, 41, "Message",ExpressionUUID->"1f81322f-e454-4780-a346-66e8bb9791ea"],
+Cell[57626, 1188, 349, 9, 41, "Message",ExpressionUUID->"7aa16c07-20e5-4528-9830-19e22c89af62"],
+Cell[57978, 1199, 349, 9, 41, "Message",ExpressionUUID->"cc9dcf70-6c05-4cf9-b71e-d9f670388977"],
+Cell[58330, 1210, 456, 10, 41, "Message",ExpressionUUID->"eb5906f1-aa55-499e-8c88-dbc3cbf5829c"],
+Cell[CellGroupData[{
+Cell[58811, 1224, 927, 20, 66, "Print",ExpressionUUID->"4e52803c-4f69-49c9-a571-e07c30264414"],
+Cell[59741, 1246, 262, 5, 37, "Print",ExpressionUUID->"fd819ad8-99eb-485a-9084-7d1bc9a2e899"]
+}, Open  ]],
+Cell[60018, 1254, 329, 6, 69, "Output",ExpressionUUID->"621b11df-71a7-4459-8eba-f3ab95763e9a"]
+}, Open  ]],
+Cell[60362, 1263, 751, 16, 123, "Text",ExpressionUUID->"792bd887-faf3-44c7-972a-cf55536a697a"],
+Cell[CellGroupData[{
+Cell[61138, 1283, 616, 16, 50, "Input",ExpressionUUID->"2916e4a8-6e21-4791-9f65-082d1fcecab4"],
+Cell[61757, 1301, 702, 17, 73, "Output",ExpressionUUID->"4aa716c8-2bce-4733-a16a-09742edc07a6"]
+}, Open  ]],
+Cell[62474, 1321, 405, 9, 88, "Text",ExpressionUUID->"cd1b18c1-2775-4837-b7fc-e479ce62d174"],
+Cell[CellGroupData[{
+Cell[62904, 1334, 697, 15, 84, "Input",ExpressionUUID->"aca1bd45-e7b5-4714-b707-3bd184289593"],
+Cell[63604, 1351, 375, 9, 41, "Message",ExpressionUUID->"ddd40d00-12d0-4a43-8d68-5f714b56f94c"],
+Cell[63982, 1362, 372, 9, 41, "Message",ExpressionUUID->"c697e500-b91f-4504-930a-919847c83ad1"],
+Cell[CellGroupData[{
+Cell[64379, 1375, 951, 20, 66, "Print",ExpressionUUID->"63235146-9a43-47c4-b6a7-93c2942ee964"],
+Cell[65333, 1397, 423, 7, 37, "Print",ExpressionUUID->"f2888cb3-abad-48b4-b578-b2029f9221ab"]
+}, Open  ]],
+Cell[65771, 1407, 353, 7, 69, "Output",ExpressionUUID->"5f76cefb-8175-49ee-a1f8-2eb8ae7ff73e"]
+}, Open  ]],
+Cell[66139, 1417, 191, 3, 53, "Text",ExpressionUUID->"7ed6fc4a-545a-4f7b-8730-ff0b9d2cee9b"],
+Cell[CellGroupData[{
+Cell[66355, 1424, 399, 9, 49, "Input",ExpressionUUID->"07d878bb-7309-4f62-8884-d3cc58281123"],
+Cell[66757, 1435, 464, 11, 41, "Message",ExpressionUUID->"00802776-7879-4363-be32-1b6de6a49fc1"],
+Cell[67224, 1448, 466, 11, 41, "Message",ExpressionUUID->"7f496072-44be-43d8-ad42-6b95c4b56615"],
+Cell[67693, 1461, 463, 11, 41, "Message",ExpressionUUID->"6ddec645-cc83-4523-b6fb-7fc0763e9d12"],
+Cell[68159, 1474, 571, 12, 41, "Message",ExpressionUUID->"3abcd065-3f63-48a9-8b9a-c3fc88ddf79a"],
+Cell[CellGroupData[{
+Cell[68755, 1490, 1046, 22, 66, "Print",ExpressionUUID->"f6bf3f30-1566-460d-945c-89ad9c4f7aea"],
+Cell[69804, 1514, 343, 6, 36, "Print",ExpressionUUID->"145bbae6-ba73-4593-b1b6-9f91159c7ba8"]
+}, Open  ]],
+Cell[70162, 1523, 323, 6, 69, "Output",ExpressionUUID->"7e466404-ddaa-4a2f-a1f1-b75d4b0935bd"]
+}, Open  ]],
+Cell[70500, 1532, 1636, 35, 197, "Text",ExpressionUUID->"91322c49-112e-40c6-8ab0-a73de1c87afa"],
+Cell[CellGroupData[{
+Cell[72161, 1571, 447, 11, 49, "Input",ExpressionUUID->"1167312d-8312-4731-a0ba-0dbf2fe5fa37"],
+Cell[72611, 1584, 445, 11, 41, "Message",ExpressionUUID->"fe35683e-5659-4126-8338-02a7a6547310"],
+Cell[73059, 1597, 445, 11, 41, "Message",ExpressionUUID->"2f2cdf69-9cca-4930-a617-8141fe9cabfc"],
+Cell[73507, 1610, 447, 11, 41, "Message",ExpressionUUID->"c3285975-a525-4955-a742-fd498e590cb6"],
+Cell[73957, 1623, 552, 12, 41, "Message",ExpressionUUID->"10fa1214-97ba-4a7f-833f-3c04c6a1f6c8"],
+Cell[74512, 1637, 368, 7, 36, "Print",ExpressionUUID->"2e2cb06c-81e0-439f-9030-1187a8e69d24"],
+Cell[74883, 1646, 324, 6, 69, "Output",ExpressionUUID->"566d2683-c53e-4de8-86ad-e47cf69337ae"]
+}, Open  ]],
+Cell[75222, 1655, 919, 15, 157, "Text",ExpressionUUID->"140f1512-fba9-4a8b-8377-8a3946e53f9e"],
+Cell[CellGroupData[{
+Cell[76166, 1674, 513, 11, 49, "Input",ExpressionUUID->"7f2a9a15-6af2-495b-aa30-3cc832dbafd5"],
+Cell[76682, 1687, 570, 13, 41, "Message",ExpressionUUID->"2806ef09-adab-4108-97e1-44e71ad903df"],
+Cell[77255, 1702, 570, 13, 41, "Message",ExpressionUUID->"568f1375-d02b-4d32-a3ff-aec220ccc568"],
+Cell[77828, 1717, 570, 13, 41, "Message",ExpressionUUID->"196caeac-44e3-4fdc-bf82-a0b98fae81d5"],
+Cell[78401, 1732, 677, 14, 41, "Message",ExpressionUUID->"ba0a76ba-b224-4112-bf42-ba8785d9e584"],
+Cell[CellGroupData[{
+Cell[79103, 1750, 1149, 24, 66, "Print",ExpressionUUID->"8a8b0560-bbd3-45e0-ad4e-2593050cdd15"],
+Cell[80255, 1776, 442, 8, 36, "Print",ExpressionUUID->"5207a39e-8d26-4c62-a989-53ce253cd6cf"]
+}, Open  ]],
+Cell[80712, 1787, 446, 7, 69, "Output",ExpressionUUID->"dab9a1a5-3342-4c60-a1ba-fb6fc195d5cd"]
+}, Open  ]],
+Cell[81173, 1797, 199, 3, 53, "Text",ExpressionUUID->"abf9b9c0-12d8-46c4-9c6a-41cd53199c52"],
+Cell[CellGroupData[{
+Cell[81397, 1804, 402, 10, 49, "Input",ExpressionUUID->"96e36eea-46e3-4dc9-af8d-c7de2d2ff2d3"],
+Cell[81802, 1816, 412, 8, 36, "Print",ExpressionUUID->"59711431-a3e0-4507-b6c3-6e5da1f81a85"],
+Cell[82217, 1826, 275, 5, 69, "Output",ExpressionUUID->"fa7ec9ef-555a-484c-b722-30b9b3dfdde4"]
+}, Open  ]],
+Cell[82507, 1834, 238, 5, 53, "Text",ExpressionUUID->"77a1d365-30ad-46c9-8b17-0ad42587a255"],
+Cell[CellGroupData[{
+Cell[82770, 1843, 668, 17, 50, "Input",ExpressionUUID->"96511565-ea86-43a2-9785-63f1a080c774"],
+Cell[83441, 1862, 484, 8, 66, "Print",ExpressionUUID->"31917157-2b24-4004-b822-05c0fce45361"],
+Cell[83928, 1872, 297, 5, 69, "Output",ExpressionUUID->"a62ad612-b1e2-4751-95b6-e5d550ef581f"]
+}, Open  ]],
+Cell[84240, 1880, 225, 5, 53, "Text",ExpressionUUID->"2b925873-944d-41bf-aaa5-5227e24e48bf"],
+Cell[CellGroupData[{
+Cell[84490, 1889, 306, 7, 49, "Input",ExpressionUUID->"2f1c4c50-5d9b-466b-914f-230d82f4d340"],
+Cell[84799, 1898, 422, 10, 41, "Message",ExpressionUUID->"8cd432d8-4af3-478e-b40c-5bd1d3c1f824"],
+Cell[85224, 1910, 422, 10, 41, "Message",ExpressionUUID->"124d6052-dd2d-4985-a830-6116e0543b03"],
+Cell[85649, 1922, 422, 10, 41, "Message",ExpressionUUID->"6fcc7207-ce09-4017-8ed8-5f441ce65522"],
+Cell[86074, 1934, 529, 11, 41, "Message",ExpressionUUID->"5f12cce4-1c43-4d24-9637-f69db604b86b"],
+Cell[86606, 1947, 341, 6, 36, "Print",ExpressionUUID->"2173b6a4-6de0-4c77-ada0-7e9a51a69992"],
+Cell[86950, 1955, 294, 5, 69, "Output",ExpressionUUID->"7228c0f1-4704-4b7c-bd84-fc18c6e6c0e5"]
+}, Open  ]]
+}, Open  ]]
+}
+]
+*)
+
